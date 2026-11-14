@@ -93,6 +93,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .exlist{display:flex;flex-direction:column;gap:4px;font-size:14px}
 .exlist div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding:5px 0}
 .exlist div:last-child{border-bottom:0}
+.exlist div>span:first-child{flex:1;min-width:0}
 .exlist span:last-child{font-family:var(--display);font-weight:600;font-size:16px;white-space:nowrap}
 .donebadge{font-size:12px;font-weight:700;color:var(--good)}
 .bar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden}
@@ -172,6 +173,17 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .planrow{display:grid;grid-template-columns:36px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
 .planrow:last-child{border-bottom:0}
 .pw{font-family:var(--display);font-weight:800;font-size:22px;text-align:center;border-radius:8px;padding:2px 0}
+.ibtn{flex:none;width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-family:Georgia,serif;font-style:italic;font-weight:700;font-size:16px;color:var(--phase)}
+.diag{width:100%;height:auto;display:block;background:var(--bg);border-radius:14px;padding:8px 4px 2px;margin:12px 0 4px}
+.guide h3{font-family:var(--display);font-size:20px;font-weight:700;margin:16px 0 6px}
+.guide ol,.guide ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.guide li{line-height:1.4}
+.search{width:100%;height:48px;border-radius:12px;border:1px solid var(--line);background:var(--bg);padding:0 14px;font-size:16px}
+.pick{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;padding:11px 0;border-bottom:1px solid var(--line)}
+.pick:last-child{border-bottom:0}
+.pick .pn{font-weight:600;line-height:1.25}
+.pick .pm{font-size:13px;color:var(--muted)}
+.swapnote{font-size:12px;color:var(--warn);margin-top:3px}
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translateX(-50%);z-index:90;background:var(--surface-2);border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -187,6 +199,433 @@ h1,h2,h3{margin:0;text-wrap:balance}
 <script>
 (function(){
 "use strict";
+/* ===================== EXERCISE LIBRARY =====================
+   Simple side-view diagrams drawn from joint coordinates: start pose, then end pose.
+   p = {h:head, n:neck, s:shoulder, e:elbow, w:wrist, hp:hip, k:knee, a:ankle}
+   opt = {bar, barW, db, cable:[x,y], bench:[x,y,w,deg], seat, plate:[x,y,w,h], floor} */
+function figure(p,opt){
+  opt=opt||{};
+  const L=(a,b,wd,op)=>`<path d="M${a[0]} ${a[1]}L${b[0]} ${b[1]}" stroke="currentColor" stroke-width="${wd||5}" stroke-linecap="round" fill="none"${op?` opacity="${op}"`:""}/>`;
+  const plate=(x,y)=>`<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="${x}" cy="${y}" r="2.5" fill="currentColor"/>`;
+  const dbell=(x,y)=>`<circle cx="${x}" cy="${y}" r="6" fill="currentColor"/>`;
+  const handle=(x,y)=>`<circle cx="${x}" cy="${y}" r="4" fill="none" stroke="currentColor" stroke-width="2.5"/>`;
+  let g="";
+  if(opt.floor) g+=`<path d="M4 ${opt.floor}H146" stroke="currentColor" stroke-width="2" opacity=".3"/>`;
+  if(opt.hbar) g+=`<path d="M${opt.hbar[0]} ${opt.hbar[2]}H${opt.hbar[1]}" stroke="currentColor" stroke-width="4" stroke-linecap="round" opacity=".55"/>`;
+  if(opt.bench){const[bx,by,bw,deg]=opt.bench;
+    g+=`<g transform="translate(${bx} ${by}) rotate(${deg||0})"><rect x="0" y="0" width="${bw}" height="7" rx="3" fill="currentColor" opacity=".35"/></g>`;}
+  if(opt.seat){const[sx,sy,sw,sh]=opt.seat; g+=`<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="3" fill="currentColor" opacity=".3"/>`;}
+  if(opt.plate){const[px,py,pw,ph]=opt.plate; g+=`<rect x="${px}" y="${py}" width="${pw}" height="${ph}" rx="3" fill="currentColor" opacity=".35"/>`;}
+  if(opt.cable) g+=L(opt.cable,p.w,2,.7)+`<circle cx="${opt.cable[0]}" cy="${opt.cable[1]}" r="3.5" fill="currentColor" opacity=".5"/>`;
+  if(opt.cable2&&p.w2) g+=L(opt.cable2,p.w2,2,.7)+`<circle cx="${opt.cable2[0]}" cy="${opt.cable2[1]}" r="3.5" fill="currentColor" opacity=".5"/>`;
+  // back limbs first, slightly faded
+  if(p.k2) g+=L(p.hp,p.k2,5,.6)+L(p.k2,p.a2,5,.6);
+  g+=L(p.hp,p.k)+L(p.k,p.a)+L(p.n,p.hp,6);
+  if(p.s2) g+=L(p.s,p.s2,5)+L(p.s2,p.e2)+L(p.e2,p.w2);
+  g+=L(p.s,p.e)+L(p.e,p.w);
+  g+=`<circle cx="${p.h[0]}" cy="${p.h[1]}" r="9" fill="currentColor"/>`;
+  const at=(fn)=>{g+=fn(p.w[0],p.w[1]); if(p.w2) g+=fn(p.w2[0],p.w2[1]);};
+  if(opt.bar) g+=plate(p.w[0],p.w[1]);
+  if(opt.db) at(dbell);
+  if(opt.handle) at(handle);
+  if(opt.wheel) g+=`<circle cx="${p.w[0]}" cy="${p.w[1]+3}" r="8" fill="none" stroke="currentColor" stroke-width="4"/>`;
+  return g;
+}
+const STAND={h:[70,40],n:[70,52],s:[70,56],hp:[70,94],k:[70,118],a:[70,144]};
+const FRONT={h:[70,38],n:[70,50],s:[60,56],s2:[80,56],hp:[70,94],k:[63,118],a:[61,144],k2:[77,118],a2:[79,144]};
+const P=(base,o)=>Object.assign({},base,o);
+/* Each pattern: [startPose, startOpts, endPose, endOpts] */
+const PAT={
+ bench:[{h:[32,96],n:[44,98],s:[50,98],e:[50,78],w:[50,58],hp:[86,100],k:[108,100],a:[112,130]},{bar:1,bench:[26,104,96,0],floor:146},
+        {h:[32,96],n:[44,98],s:[50,98],e:[38,90],w:[50,86],hp:[86,100],k:[108,100],a:[112,130]},{bar:1,bench:[26,104,96,0],floor:146}],
+ incline:[{h:[34,78],n:[46,84],s:[52,86],e:[52,66],w:[52,46],hp:[88,104],k:[106,112],a:[108,140]},{bar:1,bench:[30,96,86,-18],floor:146},
+          {h:[34,78],n:[46,84],s:[52,86],e:[40,78],w:[50,72],hp:[88,104],k:[106,112],a:[108,140]},{bar:1,bench:[30,96,86,-18],floor:146}],
+ ohp:[P(STAND,{e:[62,74],w:[76,60]}),{bar:1,floor:146},
+      P(STAND,{e:[72,38],w:[72,18]}),{bar:1,floor:146}],
+ squat:[P(STAND,{e:[60,66],w:[78,54]}),{bar:1,floor:146},
+        {h:[60,62],n:[64,74],s:[66,76],e:[56,86],w:[76,72],hp:[82,108],k:[58,120],a:[72,144]},{bar:1,floor:146}],
+ hinge:[P(STAND,{e:[70,76],w:[70,96]}),{bar:1,floor:146},
+        {h:[40,68],n:[52,72],s:[56,72],e:[58,94],w:[60,116],hp:[86,90],k:[80,118],a:[74,144]},{bar:1,floor:146}],
+ trapbar:[P(STAND,{e:[70,76],w:[70,96]}),{bar:1,floor:146},
+          {h:[56,64],n:[62,76],s:[64,78],e:[66,98],w:[68,118],hp:[82,102],k:[60,120],a:[74,144]},{bar:1,floor:146}],
+ split:[{h:[58,40],n:[58,52],s:[58,56],e:[58,76],w:[58,96],hp:[58,94],k:[48,118],a:[44,144],k2:[78,118],a2:[106,112]},{db:1,floor:146,bench:[96,114,40,0]},
+        {h:[56,56],n:[56,68],s:[56,72],e:[56,92],w:[56,112],hp:[58,108],k:[38,124],a:[42,144],k2:[74,138],a2:[106,112]},{db:1,floor:146,bench:[96,114,40,0]}],
+ legpress:[{h:[30,96],n:[42,98],s:[46,98],e:[46,114],w:[46,124],hp:[80,100],k:[104,86],a:[118,100]},{seat:[22,104,64,8],plate:[122,74,14,42]},
+           {h:[30,96],n:[42,98],s:[46,98],e:[46,114],w:[46,124],hp:[80,100],k:[112,96],a:[134,98]},{seat:[22,104,64,8],plate:[138,74,10,42]}],
+ legext:[{h:[52,52],n:[52,64],s:[52,68],e:[46,86],w:[52,98],hp:[52,100],k:[76,100],a:[76,130]},{seat:[36,104,48,8],plate:[72,124,22,8]},
+         {h:[52,52],n:[52,64],s:[52,68],e:[46,86],w:[52,98],hp:[52,100],k:[76,100],a:[108,88]},{seat:[36,104,48,8],plate:[104,82,22,8]}],
+ legcurl:[{h:[32,88],n:[44,90],s:[48,90],e:[48,108],w:[40,116],hp:[84,92],k:[108,92],a:[108,122]},{bench:[26,96,90,0],plate:[100,120,22,8]},
+          {h:[32,88],n:[44,90],s:[48,90],e:[48,108],w:[40,116],hp:[84,92],k:[108,92],a:[84,70]},{bench:[26,96,90,0],plate:[76,66,22,8]}],
+ calf:[P(STAND,{e:[70,76],w:[70,96]}),{db:1,floor:146,plate:[56,142,30,6]},
+       P(STAND,{h:[70,30],n:[70,42],s:[70,46],e:[70,66],w:[70,86],hp:[70,84],k:[70,110],a:[70,134]}),{db:1,floor:146,plate:[56,142,30,6]}],
+ pulldown:[{h:[62,56],n:[62,68],s:[62,72],e:[62,50],w:[62,30],hp:[62,104],k:[86,106],a:[86,136]},{handle:1,cable:[62,6],seat:[44,108,40,8]},
+           {h:[60,56],n:[62,68],s:[62,72],e:[50,82],w:[66,66],hp:[62,104],k:[86,106],a:[86,136]},{handle:1,cable:[62,6],seat:[44,108,40,8]}],
+ pullup:[{h:[70,52],n:[70,64],s:[70,68],e:[70,46],w:[70,24],hp:[70,104],k:[74,128],a:[66,146]},{hbar:[40,100,24]},
+         {h:[72,30],n:[70,42],s:[70,46],e:[58,40],w:[70,24],hp:[70,84],k:[76,108],a:[66,126]},{hbar:[40,100,24]}],
+ row:[{h:[48,56],n:[48,68],s:[48,72],e:[70,76],w:[94,78],hp:[48,104],k:[80,108],a:[80,136]},{handle:1,cable:[140,80],seat:[32,108,36,8]},
+      {h:[46,56],n:[48,68],s:[48,72],e:[34,86],w:[56,82],hp:[48,104],k:[80,108],a:[80,136]},{handle:1,cable:[140,82],seat:[32,108,36,8]}],
+ dbrow:[{h:[36,68],n:[48,72],s:[54,74],e:[54,96],w:[54,118],hp:[86,86],k:[86,116],a:[86,142]},{db:1,floor:146,bench:[18,96,40,0]},
+        {h:[36,68],n:[48,72],s:[54,74],e:[70,62],w:[62,82],hp:[86,86],k:[86,116],a:[86,142]},{db:1,floor:146,bench:[18,96,40,0]}],
+ lateral:[P(FRONT,{e:[56,76],w:[54,96],e2:[84,76],w2:[86,96]}),{db:1,floor:146},
+          P(FRONT,{e:[40,58],w:[20,60],e2:[100,58],w2:[120,60]}),{db:1,floor:146}],
+ rearfly:[{h:[36,70],n:[48,74],s:[54,76],e:[54,98],w:[54,118],hp:[84,90],k:[84,116],a:[84,142]},{db:1,floor:146},
+          {h:[36,70],n:[48,74],s:[54,76],e:[58,56],w:[62,36],hp:[84,90],k:[84,116],a:[84,142]},{db:1,floor:146}],
+ curl:[P(STAND,{e:[70,78],w:[72,100]}),{db:1,floor:146},
+       P(STAND,{e:[70,78],w:[84,60]}),{db:1,floor:146}],
+ pushdown:[P(STAND,{e:[72,78],w:[88,64]}),{handle:1,cable:[90,6],floor:146},
+           P(STAND,{e:[72,78],w:[78,100]}),{handle:1,cable:[80,6],floor:146}],
+ ohtriceps:[P(STAND,{h:[68,44],n:[70,56],s:[70,60],e:[76,34],w:[92,52]}),{handle:1,cable:[130,58],floor:146},
+            P(STAND,{h:[68,44],n:[70,56],s:[70,60],e:[76,34],w:[86,14]}),{handle:1,cable:[130,30],floor:146}],
+ fly:[P(FRONT,{e:[40,60],w:[18,62],e2:[100,60],w2:[122,62]}),{handle:1,cable:[4,40],cable2:[136,40],floor:146},
+      P(FRONT,{e:[56,72],w:[68,84],e2:[84,72],w2:[72,84]}),{handle:1,cable:[4,40],cable2:[136,40],floor:146}],
+ crunch:[{h:[62,36],n:[62,48],s:[62,52],e:[54,40],w:[64,32],hp:[62,98],k:[66,128],a:[100,130]},{cable:[64,4],floor:132},
+         {h:[70,74],n:[64,80],s:[64,76],e:[58,62],w:[68,58],hp:[62,98],k:[66,128],a:[100,130]},{cable:[68,4],floor:132}],
+ legraise:[{h:[70,48],n:[70,60],s:[70,64],e:[70,42],w:[70,22],hp:[70,100],k:[70,124],a:[70,146]},{hbar:[40,100,22]},
+           {h:[70,48],n:[70,60],s:[70,64],e:[70,42],w:[70,22],hp:[70,100],k:[98,88],a:[100,62]},{hbar:[40,100,22]}],
+ rollout:[{h:[62,56],n:[62,68],s:[62,72],e:[62,94],w:[62,114],hp:[62,112],k:[86,128],a:[110,126]},{wheel:1,floor:132},
+          {h:[36,98],n:[48,102],s:[52,104],e:[36,112],w:[22,116],hp:[88,112],k:[96,128],a:[118,126]},{wheel:1,floor:132}],
+ pushup:[{h:[34,92],n:[46,96],s:[52,98],e:[52,112],w:[52,126],hp:[86,104],k:[110,114],a:[128,124]},{floor:130},
+         {h:[34,106],n:[46,108],s:[52,110],e:[38,118],w:[52,126],hp:[86,114],k:[110,120],a:[128,126]},{floor:130}]
+};
+function diagram(pat){
+  const d=PAT[pat]; if(!d) return "";
+  return `<svg viewBox="0 0 330 170" class="diag" role="img" aria-label="Movement diagram: start and finish position">
+    <g color="var(--muted)">${figure(d[0],d[1])}</g>
+    <g color="var(--phase)" transform="translate(180 0)">${figure(d[2],d[3])}</g>
+    <g opacity=".6"><path d="M158 80h16" stroke="var(--muted)" stroke-width="3" stroke-linecap="round"/><path d="M168 73l7 7-7 7" stroke="var(--muted)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/></g>
+    <text x="75" y="166" text-anchor="middle" font-size="12" font-weight="600" fill="var(--muted)">START</text>
+    <text x="255" y="166" text-anchor="middle" font-size="12" font-weight="600" fill="var(--phase)">FINISH</text></svg>`;
+}
+
+/* name: [pattern, muscles, [how-to steps], [common mistakes], [alternatives]] */
+const EXDB={
+ "Barbell bench press":["bench","Chest, front delts, triceps",
+  ["Lie back with eyes under the bar. Pull your shoulder blades together and down, feet flat.",
+   "Grip a bit wider than shoulders. Unrack and hold the bar over your chest.",
+   "Lower to the middle of your chest in about 2 seconds, elbows around 45 degrees from your body.",
+   "Press back up and slightly back toward your face."],
+  ["Flaring elbows straight out to the sides","Bouncing the bar off your chest"],
+  ["Dumbbell bench press","Machine chest press","Incline DB press","Push-ups","Smith machine bench press"]],
+ "Incline DB press":["incline","Upper chest, front delts, triceps",
+  ["Set the bench to about 30 degrees. Any higher turns it into a shoulder press.",
+   "Start with the dumbbells at the outside of your shoulders.",
+   "Press up and slightly together, stopping just short of locking out.",
+   "Lower under control until you feel a stretch across your upper chest."],
+  ["Setting the bench too upright","Clanging the dumbbells together at the top"],
+  ["Incline barbell press","Low-to-high cable fly","Machine incline press","Barbell bench press"]],
+ "Incline barbell press":["incline","Upper chest, front delts, triceps",
+  ["Bench at 15 to 30 degrees, shoulder blades pulled back.",
+   "Grip slightly wider than shoulders, unrack over your upper chest.",
+   "Lower to just below your collarbone, elbows tucked a little.",
+   "Press up in a straight line."],
+  ["Too steep an incline","Letting the bar drift down toward your belly"],
+  ["Incline DB press","Barbell bench press","Smith machine incline press","Low-to-high cable fly"]],
+ "Incline press (BB or DB)":["incline","Upper chest, front delts, triceps",
+  ["Bench at 15 to 30 degrees. Barbell or dumbbells, whichever is free.",
+   "Lower to your upper chest under control.",
+   "Press up and slightly back.",
+   "Stop just short of lockout to keep tension on the chest."],
+  ["Bench set too upright","Bouncing out of the bottom"],
+  ["Incline DB press","Incline barbell press","Machine incline press","Low-to-high cable fly"]],
+ "Push-ups":["pushup","Chest, front delts, triceps, core",
+  ["Hands slightly wider than your shoulders, body in a straight line.",
+   "Squeeze your glutes so your hips do not sag.",
+   "Lower until your chest is just above the floor.",
+   "Press back up, pushing the floor away."],
+  ["Hips sagging or piking up","Only going halfway down"],
+  ["Incline push-ups (hands on a bench)","Barbell bench press","Machine chest press","Dumbbell bench press"]],
+ "Standing overhead press":["ohp","Shoulders, triceps, upper chest, core",
+  ["Bar on your front delts, hands just outside your shoulders.",
+   "Squeeze your glutes and brace. Do not lean back.",
+   "Press the bar up, moving your head back slightly to let it pass.",
+   "Finish with the bar over the middle of your foot, arms locked."],
+  ["Leaning back and turning it into an incline press","Pressing the bar around your face instead of past it"],
+  ["Seated DB shoulder press","Machine shoulder press","Seated barbell press","Arnold press"]],
+ "Seated DB shoulder press":["ohp","Shoulders, triceps",
+  ["Sit with the backrest nearly upright, back flat against it.",
+   "Start with the dumbbells at ear height, palms forward.",
+   "Press up and slightly in, stopping just short of lockout.",
+   "Lower under control to ear height."],
+  ["Bouncing the dumbbells off your shoulders","Arching your lower back off the pad"],
+  ["Standing overhead press","Machine shoulder press","Arnold press","Landmine press"]],
+ "Back squat":["squat","Quads, glutes, adductors, core",
+  ["Bar across your upper back, not your neck. Hands wherever is comfortable.",
+   "Feet shoulder-width, toes turned out slightly. Big breath and brace.",
+   "Sit down and back, knees tracking over your toes.",
+   "Go to at least parallel, then drive up through your whole foot."],
+  ["Knees caving in","Letting your chest drop so it becomes a good morning"],
+  ["Front squat","Hack squat or leg press","Goblet squat","Smith machine squat","Bulgarian split squat"]],
+ "Romanian deadlift":["hinge","Hamstrings, glutes, lower back",
+  ["Stand with the bar against your thighs, knees slightly bent.",
+   "Push your hips straight back and keep the bar touching your legs.",
+   "Lower until you feel a strong hamstring stretch, usually mid-shin.",
+   "Drive your hips forward to stand up. Squeeze your glutes at the top."],
+  ["Rounding your lower back","Bending your knees more as you go down, turning it into a deadlift"],
+  ["Dumbbell RDL","Single-leg RDL","Good morning","Seated leg curl","Back extension"]],
+ "Trap bar deadlift":["trapbar","Quads, glutes, hamstrings, traps, grip",
+  ["Stand in the middle of the bar, feet hip-width.",
+   "Hinge down and grab the handles. Chest up, lats tight.",
+   "Push the floor away and stand up tall. Do not lean back at the top.",
+   "Lower under control, or set it down and reset each rep."],
+  ["Rounding your back by yanking the bar","Grinding out reps when form breaks down"],
+  ["Conventional deadlift","Hack squat or leg press","Romanian deadlift","Goblet squat"]],
+ "Bulgarian split squat":["split","Quads, glutes, adductors, balance",
+  ["Put your rear foot on a bench. Front foot far enough forward that your knee stays over your foot.",
+   "Hold dumbbells at your sides.",
+   "Lower straight down until your rear knee is near the floor.",
+   "Drive up through the front heel. Finish all reps, then switch legs."],
+  ["Front foot too close to the bench","Pushing off the back foot"],
+  ["Walking lunge","Reverse lunge","Step-up","Leg press","Hack squat or leg press"]],
+ "Leg press":["legpress","Quads, glutes, hamstrings",
+  ["Feet shoulder-width in the middle of the platform.",
+   "Lower until your knees are near your chest, without your lower back lifting off the pad.",
+   "Press up through your whole foot, stopping just short of locking your knees.",
+   "Keep your hips down on the seat the whole time."],
+  ["Letting your lower back round at the bottom","Locking the knees hard at the top"],
+  ["Hack squat","Back squat","Goblet squat","Bulgarian split squat","Smith machine squat"]],
+ "Hack squat or leg press":["legpress","Quads, glutes",
+  ["Feet mid-platform, shoulder-width, toes slightly out.",
+   "Lower under control to a deep but comfortable depth.",
+   "Drive up through your whole foot, knees tracking over your toes.",
+   "Stop just short of locking out to keep tension on your quads."],
+  ["Bouncing out of the bottom","Heels lifting off the platform"],
+  ["Leg press","Back squat","Goblet squat","Smith machine squat","Bulgarian split squat"]],
+ "Leg extension":["legext","Quads",
+  ["Sit back in the seat, pad resting on your lower shins.",
+   "Straighten your legs and squeeze your quads for a second at the top.",
+   "Lower slowly, about 2 to 3 seconds.",
+   "Stop short of letting the weight stack touch down between reps."],
+  ["Swinging the weight up with momentum","Letting the weight drop on the way down"],
+  ["Leg press","Hack squat","Goblet squat","Sissy squat"]],
+ "Leg curl":["legcurl","Hamstrings",
+  ["Pad just above your heels, hips flat on the bench or seat.",
+   "Curl your heels toward your glutes as far as you can.",
+   "Squeeze at the top for a second.",
+   "Lower slowly without letting your hips lift."],
+  ["Lifting your hips to help","Letting the weight snap back down"],
+  ["Seated leg curl","Romanian deadlift","Nordic curl","Glute ham raise"]],
+ "Seated leg curl":["legcurl","Hamstrings",
+  ["Sit back fully, thigh pad snug, pad just above your heels.",
+   "Lean forward slightly. It gives the hamstrings a better stretch than leaning back.",
+   "Curl your heels down and under as far as possible.",
+   "Lower slowly, about 3 seconds."],
+  ["Sliding forward out of the seat","Only using half the range of motion"],
+  ["Leg curl","Romanian deadlift","Nordic curl","Glute ham raise"]],
+ "Standing calf raise":["calf","Calves (gastrocnemius)",
+  ["Balls of your feet on the platform, legs straight but not locked.",
+   "Let your heels drop as far as they go and pause 2 seconds in that stretch.",
+   "Push all the way up onto your toes.",
+   "Squeeze at the top, then lower slowly."],
+  ["Short bouncy reps","Skipping the stretch at the bottom"],
+  ["Seated calf raise","Leg press calf raise","Single-leg calf raise"]],
+ "Seated calf raise":["calf","Calves (soleus)",
+  ["Pad on your lower thighs, balls of your feet on the platform.",
+   "Let your heels sink down for a deep stretch.",
+   "Push up onto your toes as high as you can.",
+   "Slow tempo throughout. This one responds to time under tension."],
+  ["Rushing the reps","Not using full range at either end"],
+  ["Standing calf raise","Leg press calf raise","Single-leg calf raise"]],
+ "Lat pulldown":["pulldown","Lats, biceps, mid-back",
+  ["Grip slightly wider than your shoulders. Thighs locked under the pad.",
+   "Lean back about 15 degrees and lift your chest.",
+   "Pull your elbows down toward your back pockets until the bar reaches your upper chest.",
+   "Let the bar rise all the way up and feel your lats stretch."],
+  ["Leaning way back and rowing it","Pulling behind your neck"],
+  ["Pull-ups","Chest-supported row","Seated cable row","Machine pulldown","One-arm DB row"]],
+ "Pull-ups":["pullup","Lats, biceps, mid-back, grip",
+  ["Grip slightly wider than your shoulders, hang with straight arms.",
+   "Pull your shoulder blades down first, then drive your elbows to your ribs.",
+   "Get your chin over the bar.",
+   "Lower all the way to a full hang."],
+  ["Kipping or swinging","Stopping short of a full hang at the bottom"],
+  ["Lat pulldown","Assisted pull-up machine","Band-assisted pull-ups","Chest-supported row"]],
+ "Seated cable row":["row","Mid-back, lats, rear delts, biceps",
+  ["Sit tall with a slight bend in your knees, chest up.",
+   "Pull the handle to your belly button, driving your elbows back.",
+   "Pause a second with your shoulder blades squeezed together.",
+   "Let your arms stretch forward without rounding your lower back."],
+  ["Rowing with your lower back by leaning back and forth","Shrugging your shoulders up"],
+  ["Chest-supported row","One-arm DB row","Barbell row","Lat pulldown","Machine row"]],
+ "Chest-supported row":["row","Mid-back, lats, rear delts, biceps",
+  ["Chest flat on the pad the whole set. That is the point of this one.",
+   "Let your arms hang and feel the stretch.",
+   "Pull your elbows back and squeeze your shoulder blades together.",
+   "Lower under control without your chest leaving the pad."],
+  ["Lifting your chest off the pad to move more weight","Jerking the weight with your arms"],
+  ["Seated cable row","One-arm DB row","T-bar row","Barbell row","Machine row"]],
+ "One-arm DB row":["dbrow","Lats, mid-back, biceps",
+  ["One hand and one knee on a bench, back flat and roughly parallel to the floor.",
+   "Let the dumbbell hang and stretch your lat.",
+   "Pull it toward your hip, not your shoulder.",
+   "Squeeze at the top, lower slowly."],
+  ["Twisting your torso to yank it up","Pulling the dumbbell up toward your chest"],
+  ["Chest-supported row","Seated cable row","Barbell row","Machine row"]],
+ "Reverse pec deck":["rearfly","Rear delts, upper back",
+  ["Chest against the pad, arms out in front, slight bend in the elbows.",
+   "Open your arms out and back in a wide arc.",
+   "Think about leading with your elbows, not your hands.",
+   "Squeeze for a second, return under control."],
+  ["Bending your elbows more and turning it into a row","Using so much weight you shrug"],
+  ["Face pull","Bent-over DB rear delt fly","Cable rear delt fly"]],
+ "Cable lateral raise":["lateral","Side delts",
+  ["Cable set at hip height or lower, handle in the far hand.",
+   "Stand tall, slight bend in your elbow.",
+   "Raise your arm out to the side up to shoulder height.",
+   "Lower slowly. The cable keeps tension at the bottom, which is the point."],
+  ["Swinging your body to start each rep","Going well above shoulder height"],
+  ["DB lateral raise","Machine lateral raise","Lean-away DB lateral raise"]],
+ "DB lateral raise":["lateral","Side delts",
+  ["Dumbbells at your sides, slight bend in your elbows.",
+   "Raise out to the sides, leading with your elbows.",
+   "Stop at shoulder height. Pinkies slightly higher than thumbs.",
+   "Lower slowly, about 2 to 3 seconds."],
+  ["Using too much weight and swinging","Shrugging your traps to lift higher"],
+  ["Cable lateral raise","Machine lateral raise","Lean-away DB lateral raise"]],
+ "Low-to-high cable fly":["fly","Lower and mid chest, front delts",
+  ["Cables set low, one handle in each hand, step forward into a split stance.",
+   "Slight bend in your elbows, held the whole set.",
+   "Sweep your hands up and together until they meet around chin height.",
+   "Open back out until you feel a stretch across your chest."],
+  ["Bending and straightening your elbows, turning it into a press","Going so wide it strains your shoulders"],
+  ["Cable fly","Pec deck or cable fly","Incline DB press","Machine chest press"]],
+ "Cable fly":["fly","Chest, front delts",
+  ["Cables at chest height, handle in each hand, split stance.",
+   "Soft bend in the elbows, locked in place.",
+   "Bring your hands together in front of your chest and squeeze.",
+   "Open back out slowly for a deep stretch."],
+  ["Turning it into a press by bending your elbows","Rushing through the stretch"],
+  ["Pec deck or cable fly","Low-to-high cable fly","Dumbbell fly","Machine chest press"]],
+ "Pec deck or cable fly":["fly","Chest, front delts",
+  ["Set the handles so your arms start level with your chest.",
+   "Keep a soft bend in your elbows throughout.",
+   "Bring the handles together and hold the squeeze for a second.",
+   "Let your arms open slowly until you feel the stretch."],
+  ["Slamming the handles together","Shrugging your shoulders up toward your ears"],
+  ["Cable fly","Low-to-high cable fly","Dumbbell fly","Machine chest press"]],
+ "EZ bar curl":["curl","Biceps, forearms",
+  ["Hold the EZ bar on the angled part, hands about shoulder-width.",
+   "Elbows pinned at your sides.",
+   "Curl up without letting your elbows drift forward.",
+   "Lower all the way down, about 2 to 3 seconds."],
+  ["Swinging your hips to start the rep","Stopping halfway down"],
+  ["Barbell curl","Dumbbell curl","Cable curl","Incline DB curl","Preacher curl"]],
+ "Incline DB curl":["curl","Biceps (long head), forearms",
+  ["Set the bench to about 45 to 60 degrees and sit back.",
+   "Let your arms hang straight down behind your body. That stretch is what makes this one work.",
+   "Curl up without moving your upper arms forward.",
+   "Lower slowly all the way back to the stretch."],
+  ["Letting your elbows swing forward","Cutting the bottom of the rep short"],
+  ["EZ bar curl","Dumbbell curl","Preacher curl","Cable curl"]],
+ "Hammer curl":["curl","Biceps, brachialis, forearms",
+  ["Dumbbells at your sides, palms facing in. Keep them that way the whole rep.",
+   "Elbows pinned at your sides.",
+   "Curl up to shoulder height.",
+   "Lower slowly. This one builds arm thickness."],
+  ["Swinging the weight","Rotating your palms as you curl"],
+  ["Rope hammer curl","EZ bar curl","Dumbbell curl","Reverse curl"]],
+ "Rope triceps pushdown":["pushdown","Triceps (lateral and medial heads)",
+  ["Rope attached high, elbows pinned at your sides.",
+   "Push down and spread the rope apart at the bottom.",
+   "Squeeze for a second with your arms straight.",
+   "Let it come up until you feel a stretch, without your elbows flaring out."],
+  ["Leaning over the weight to push it down","Letting your elbows travel forward and back"],
+  ["Straight bar pushdown","Overhead cable triceps ext.","Dips","Skull crushers"]],
+ "Overhead cable triceps ext.":["ohtriceps","Triceps (long head)",
+  ["Face away from the cable, rope held behind your head, elbows up by your ears.",
+   "Step forward so there is tension at the start.",
+   "Extend your arms overhead until straight.",
+   "Lower slowly to a deep stretch behind your head."],
+  ["Letting your elbows flare out wide","Using so much weight your shoulders take over"],
+  ["Skull crushers","Rope triceps pushdown","Dumbbell overhead extension","Dips"]],
+ "Cable crunch":["crunch","Abs",
+  ["Kneel facing the machine, rope beside your head, hips stay in one place.",
+   "Curl your spine down, bringing your ribs toward your hips.",
+   "Squeeze your abs hard at the bottom.",
+   "Return slowly without letting the weight pull you upright."],
+  ["Hinging at the hips instead of curling your spine","Pulling with your arms"],
+  ["Machine crunch","Ab wheel rollout","Hanging knee raise","Weighted sit-up"]],
+ "Hanging knee raise":["legraise","Lower abs, hip flexors",
+  ["Hang from the bar with straight arms, shoulders pulled down.",
+   "Curl your pelvis up as you raise your knees toward your chest.",
+   "Pause at the top.",
+   "Lower slowly without swinging."],
+  ["Swinging back and forth for momentum","Only lifting your knees without curling your pelvis"],
+  ["Hanging leg raise","Captain's chair knee raise","Lying leg raise","Cable crunch"]],
+ "Hanging leg raise":["legraise","Lower abs, hip flexors",
+  ["Hang with straight arms, shoulders pulled down away from your ears.",
+   "Raise straight legs up toward the bar, curling your pelvis at the top.",
+   "Pause, then lower under control.",
+   "If straight legs are too hard, bend your knees."],
+  ["Swinging","Using only your hip flexors without curling your pelvis"],
+  ["Hanging knee raise","Captain's chair leg raise","Lying leg raise","Ab wheel rollout"]],
+ "Ab wheel rollout":["rollout","Abs, obliques, lats",
+  ["Kneel with the wheel under your shoulders.",
+   "Pull your ribs down and squeeze your glutes before you move.",
+   "Roll forward as far as you can without your lower back arching.",
+   "Pull back by bracing your abs, not by sitting back on your heels."],
+  ["Letting your lower back sag","Rolling out further than you can control"],
+  ["Cable crunch","Plank","Hanging knee raise","Machine crunch"]]
+};
+/* Extra exercises you can add or swap in (not in the plan by default) */
+const EXTRA={
+ "Dumbbell bench press":["bench","Chest, front delts, triceps",["Lie back with a dumbbell in each hand at chest level.","Press up and slightly together.","Lower until you feel a stretch across your chest.","Keep your shoulder blades pulled back the whole set."],["Letting the dumbbells drift too far apart","Bouncing at the bottom"],["Barbell bench press","Machine chest press","Push-ups"]],
+ "Machine chest press":["bench","Chest, front delts, triceps",["Set the seat so the handles line up with the middle of your chest.","Press out until your arms are nearly straight.","Stop just short of lockout.","Return slowly to a stretch."],["Seat set too high or low","Short choppy reps"],["Barbell bench press","Dumbbell bench press","Cable fly"]],
+ "Machine incline press":["incline","Upper chest, front delts, triceps",["Seat set so the handles are at upper chest height.","Press up and slightly in.","Stop short of lockout.","Lower slowly."],["Seat too low","Rushing the lowering"],["Incline DB press","Incline barbell press"]],
+ "Smith machine bench press":["bench","Chest, front delts, triceps",["Set the bench so the bar lines up with your mid-chest.","Unhook and lower to your chest.","Press up in the fixed track.","Good option when you have no spotter."],["Bench placed too far forward or back","Bouncing off the chest"],["Barbell bench press","Dumbbell bench press"]],
+ "Incline push-ups (hands on a bench)":["pushup","Chest, front delts, triceps",["Hands on a bench, body in a straight line.","Lower your chest to the bench.","Press back up.","The higher the bench, the easier it is."],["Hips sagging","Half reps"],["Push-ups","Machine chest press"]],
+ "Dumbbell fly":["fly","Chest, front delts",["Lie flat, dumbbells above your chest, soft bend in the elbows.","Open your arms out in a wide arc until you feel a stretch.","Bring them back together over your chest.","Keep the elbow angle fixed."],["Bending your elbows and pressing","Going too deep and straining the shoulder"],["Cable fly","Pec deck or cable fly"]],
+ "Front squat":["squat","Quads, upper back, core",["Bar across your front delts, elbows high.","Feet shoulder-width, brace hard.","Squat straight down, staying upright.","Drive up keeping your elbows up."],["Elbows dropping","Rounding forward"],["Back squat","Hack squat or leg press","Goblet squat"]],
+ "Goblet squat":["squat","Quads, glutes, core",["Hold one dumbbell at your chest.","Feet shoulder-width, toes slightly out.","Squat down between your knees.","Drive up through your whole foot."],["Letting the weight pull you forward","Half depth"],["Back squat","Leg press","Hack squat or leg press"]],
+ "Smith machine squat":["squat","Quads, glutes",["Bar on your upper back, feet slightly in front of you.","Squat down to at least parallel.","Drive up through your whole foot.","The fixed track makes it easier to balance."],["Feet too far forward, straining the knees","Half depth"],["Back squat","Hack squat or leg press"]],
+ "Hack squat":["legpress","Quads, glutes",["Back flat on the pad, feet mid-platform.","Lower under control to a deep position.","Drive up without locking out hard.","Keep your heels down."],["Heels lifting","Bouncing at the bottom"],["Leg press","Back squat"]],
+ "Walking lunge":["split","Quads, glutes, adductors",["Dumbbells at your sides.","Step forward and lower your back knee toward the floor.","Push through the front heel to stand and step through.","Keep your torso upright."],["Short steps that hammer the knees","Leaning forward"],["Bulgarian split squat","Reverse lunge","Step-up"]],
+ "Reverse lunge":["split","Quads, glutes",["Step backward and lower your back knee toward the floor.","Keep most of your weight on the front leg.","Push through the front heel to stand.","Easier on the knees than forward lunges."],["Pushing off the back foot","Leaning forward"],["Bulgarian split squat","Walking lunge","Step-up"]],
+ "Step-up":["split","Quads, glutes",["Box or bench at about knee height.","Place your whole foot on it.","Stand up by pushing through that heel, without pushing off the floor.","Lower slowly."],["Bouncing off the back foot","Box too high"],["Bulgarian split squat","Walking lunge"]],
+ "Conventional deadlift":["trapbar","Glutes, hamstrings, back, traps, grip",["Bar over the middle of your foot, shins almost touching.","Grip just outside your legs, chest up, lats tight.","Push the floor away and stand tall.","Reset your brace each rep."],["Rounding your back","Hips shooting up first"],["Trap bar deadlift","Romanian deadlift"]],
+ "Dumbbell RDL":["hinge","Hamstrings, glutes",["Dumbbells in front of your thighs, knees slightly bent.","Push your hips back, keeping the weights close to your legs.","Lower to a strong hamstring stretch.","Drive your hips forward to stand."],["Rounding your back","Squatting instead of hinging"],["Romanian deadlift","Single-leg RDL","Seated leg curl"]],
+ "Single-leg RDL":["hinge","Hamstrings, glutes, balance",["One dumbbell, stand on one leg.","Hinge forward, letting the back leg rise behind you.","Lower to a stretch, keeping your hips level.","Stand back up under control."],["Twisting your hips open","Rushing the reps"],["Romanian deadlift","Dumbbell RDL"]],
+ "Good morning":["hinge","Hamstrings, glutes, lower back",["Light bar on your upper back.","Soft knees, push your hips back.","Lower your chest until you feel a hamstring stretch.","Drive your hips forward to stand."],["Going too heavy","Rounding your back"],["Romanian deadlift","Back extension"]],
+ "Back extension":["hinge","Lower back, glutes, hamstrings",["Pads just below your hip bones.","Lower under control with a flat back.","Come up until your body is in a straight line. Do not arch past it.","Squeeze your glutes at the top."],["Hyperextending at the top","Swinging"],["Romanian deadlift","Good morning"]],
+ "Nordic curl":["legcurl","Hamstrings",["Kneel with your ankles anchored.","Lower yourself forward as slowly as you can.","Catch yourself with your hands, then push back up.","Very hard. Start with a small range."],["Dropping instead of lowering slowly","Bending at the hips"],["Seated leg curl","Leg curl"]],
+ "Glute ham raise":["legcurl","Hamstrings, glutes",["Set up on the GHR pad with your feet anchored.","Lower your torso under control.","Pull yourself back up with your hamstrings.","Keep your hips straight."],["Bending at the hips to cheat","Dropping down fast"],["Leg curl","Nordic curl"]],
+ "Sissy squat":["legext","Quads",["Hold onto something for balance.","Let your knees travel forward as you lean back.","Lower until you feel a deep quad stretch.","Come back up under control."],["Going too deep too soon","Losing the straight line from knee to shoulder"],["Leg extension","Hack squat"]],
+ "Leg press calf raise":["calf","Calves",["Balls of your feet on the bottom edge of the platform.","Let your heels drop for a deep stretch.","Push up onto your toes.","Keep your knees nearly straight."],["Bending your knees to push","Short reps"],["Standing calf raise","Seated calf raise"]],
+ "Single-leg calf raise":["calf","Calves",["Stand on one foot on a step, holding something for balance.","Let your heel drop below the step.","Push all the way up onto your toes.","Switch legs."],["Bouncing","Not using full range"],["Standing calf raise","Seated calf raise"]],
+ "Assisted pull-up machine":["pullup","Lats, biceps, mid-back",["Set the assistance so you can do the target reps with 1 or 2 left in the tank.","Full hang at the bottom.","Pull your chin over the bar.","Reduce the assistance as you get stronger."],["Too much assistance","Short range of motion"],["Pull-ups","Lat pulldown","Band-assisted pull-ups"]],
+ "Band-assisted pull-ups":["pullup","Lats, biceps, mid-back",["Loop a band over the bar and put a knee or foot in it.","Full hang at the bottom.","Pull your chin over the bar.","Use a thinner band as you get stronger."],["Band so thick it does the work","Bouncing out of the bottom"],["Pull-ups","Assisted pull-up machine","Lat pulldown"]],
+ "Machine pulldown":["pulldown","Lats, mid-back, biceps",["Chest pad or thigh pad snug.","Pull the handles down to your upper chest.","Drive your elbows down and back.","Let your arms stretch fully at the top."],["Leaning back excessively","Short reps"],["Lat pulldown","Pull-ups","Chest-supported row"]],
+ "Barbell row":["dbrow","Mid-back, lats, rear delts",["Hinge forward to about 45 degrees, back flat.","Let the bar hang at arms' length.","Pull it to your lower ribs.","Lower under control."],["Standing up as you row","Jerking with your lower back"],["Chest-supported row","Seated cable row","One-arm DB row"]],
+ "T-bar row":["dbrow","Mid-back, lats",["Chest on the pad or hinged over the bar.","Pull the handles to your ribs.","Squeeze your shoulder blades together.","Lower to a stretch."],["Heaving with your whole body","Short reps"],["Chest-supported row","Barbell row"]],
+ "Machine row":["row","Mid-back, lats, biceps",["Chest against the pad, feet planted.","Pull the handles back, driving your elbows past your ribs.","Squeeze for a second.","Return to a full stretch."],["Lifting your chest off the pad","Shrugging"],["Chest-supported row","Seated cable row"]],
+ "Face pull":["rearfly","Rear delts, upper back, rotator cuff",["Rope at about face height.","Pull the rope toward your face, hands splitting apart.","Finish with your knuckles beside your ears.","Return slowly."],["Using too much weight and leaning back","Turning it into a row"],["Reverse pec deck","Bent-over DB rear delt fly"]],
+ "Bent-over DB rear delt fly":["rearfly","Rear delts, upper back",["Hinge forward, dumbbells hanging below your chest.","Slight bend in the elbows, held fixed.","Raise your arms out to the sides in a wide arc.","Squeeze, then lower slowly."],["Using your lower back to swing them up","Bending your elbows and rowing"],["Reverse pec deck","Face pull"]],
+ "Cable rear delt fly":["rearfly","Rear delts",["Cables crossed in front of you at shoulder height.","Pull your arms out and back in a wide arc.","Squeeze your rear delts.","Return slowly."],["Too much weight","Shrugging"],["Reverse pec deck","Face pull"]],
+ "Machine lateral raise":["lateral","Side delts",["Seat set so the pads sit just above your elbows.","Push out and up to shoulder height.","Pause at the top.","Lower slowly."],["Seat set wrong","Using momentum"],["DB lateral raise","Cable lateral raise"]],
+ "Lean-away DB lateral raise":["lateral","Side delts",["Hold a post with one hand and lean away from it.","Dumbbell in the free hand.","Raise out to shoulder height.","The lean keeps tension on the side delt through more of the range."],["Swinging from the lean","Going too heavy"],["DB lateral raise","Cable lateral raise"]],
+ "Machine shoulder press":["ohp","Shoulders, triceps",["Seat set so the handles are at shoulder height.","Press up, stopping short of lockout.","Lower to ear height.","Back flat on the pad."],["Seat too low","Bouncing out of the bottom"],["Seated DB shoulder press","Standing overhead press"]],
+ "Seated barbell press":["ohp","Shoulders, triceps",["Bench nearly upright, bar at your front delts.","Press up, moving your head back slightly.","Lock out over the middle of your head.","Lower under control."],["Arching your back hard","Pressing around your face"],["Standing overhead press","Seated DB shoulder press"]],
+ "Arnold press":["ohp","Shoulders, triceps",["Start with palms facing you at chin height.","Press up while rotating your palms forward.","Reverse the rotation on the way down.","Lighter than a normal press."],["Rotating too late","Going too heavy"],["Seated DB shoulder press","Machine shoulder press"]],
+ "Landmine press":["ohp","Shoulders, upper chest, triceps",["One end of a barbell in a corner or landmine.","Hold the other end at your shoulder.","Press up and forward at an angle.","Easier on the shoulders than a strict overhead press."],["Leaning back","Flaring your elbow out"],["Seated DB shoulder press","Standing overhead press"]],
+ "Barbell curl":["curl","Biceps, forearms",["Straight bar, hands about shoulder-width.","Elbows pinned at your sides.","Curl up without swinging.","Lower slowly all the way down."],["Swinging your hips","Half reps"],["EZ bar curl","Dumbbell curl","Cable curl"]],
+ "Dumbbell curl":["curl","Biceps, forearms",["Dumbbells at your sides, palms forward.","Curl one or both up, elbows fixed.","Squeeze at the top.","Lower slowly."],["Swinging","Elbows drifting forward"],["EZ bar curl","Hammer curl","Cable curl"]],
+ "Cable curl":["curl","Biceps, forearms",["Low pulley with a straight or EZ attachment.","Elbows at your sides.","Curl up and squeeze.","The cable keeps tension at the bottom too."],["Leaning back","Elbows drifting"],["EZ bar curl","Dumbbell curl"]],
+ "Preacher curl":["curl","Biceps (short head)",["Upper arms flat on the pad.","Lower to almost straight, feeling the stretch.","Curl up without lifting your elbows off the pad.","Control the bottom. That is where the strain is."],["Dropping fast at the bottom","Lifting your elbows"],["Incline DB curl","EZ bar curl"]],
+ "Reverse curl":["curl","Forearms, brachialis",["Overhand grip on an EZ bar.","Elbows at your sides.","Curl up with your knuckles leading.","Lower slowly. Use less weight than a normal curl."],["Going too heavy","Swinging"],["Hammer curl","EZ bar curl"]],
+ "Rope hammer curl":["curl","Biceps, brachialis, forearms",["Rope on a low pulley, palms facing each other.","Elbows at your sides.","Curl up and squeeze.","Lower slowly."],["Leaning back","Elbows drifting forward"],["Hammer curl","Cable curl"]],
+ "Straight bar pushdown":["pushdown","Triceps",["Straight or EZ bar on a high pulley.","Elbows pinned at your sides.","Push down until your arms are straight.","Let it rise to a stretch without flaring your elbows."],["Leaning over the bar","Elbows moving forward and back"],["Rope triceps pushdown","Overhead cable triceps ext."]],
+ "Skull crushers":["ohtriceps","Triceps (long head)",["Lie on a bench, EZ bar over your chest.","Keep your upper arms still and bend at the elbows.","Lower toward your forehead or just behind it.","Extend back up without locking out hard."],["Moving your upper arms","Flaring your elbows wide"],["Overhead cable triceps ext.","Rope triceps pushdown","Dips"]],
+ "Dumbbell overhead extension":["ohtriceps","Triceps (long head)",["One dumbbell held overhead in both hands.","Elbows pointing forward, close to your head.","Lower behind your head to a stretch.","Extend back up."],["Elbows flaring wide","Arching your lower back"],["Overhead cable triceps ext.","Skull crushers"]],
+ "Dips":["pushup","Triceps, lower chest, front delts",["Support yourself on the bars, arms straight.","Lower until your upper arms are about parallel to the floor.","Stay fairly upright to hit triceps, lean forward for chest.","Press back up."],["Going too deep and straining the shoulders","Bouncing at the bottom"],["Rope triceps pushdown","Overhead cable triceps ext.","Push-ups"]],
+ "Machine crunch":["crunch","Abs",["Seat set so the pad sits on your chest.","Curl your ribs toward your hips.","Squeeze at the bottom.","Return slowly."],["Pulling with your arms","Hinging at the hips"],["Cable crunch","Ab wheel rollout"]],
+ "Weighted sit-up":["crunch","Abs, hip flexors",["Plate held at your chest, knees bent.","Curl up one vertebra at a time.","Lower slowly.","Keep your chin tucked."],["Yanking your neck","Dropping back down"],["Cable crunch","Machine crunch"]],
+ "Plank":["rollout","Abs, core",["Forearms and toes on the floor, body in a straight line.","Squeeze your glutes and pull your ribs down.","Hold for time.","Stop when your hips start to sag."],["Hips sagging or piked up","Holding your breath"],["Ab wheel rollout","Cable crunch"]],
+ "Lying leg raise":["legraise","Lower abs, hip flexors",["Lie on your back, hands under your hips.","Raise straight legs to vertical.","Curl your pelvis up slightly at the top.","Lower slowly without letting your back arch."],["Lower back arching off the floor","Dropping your legs"],["Hanging knee raise","Hanging leg raise"]],
+ "Captain's chair knee raise":["legraise","Lower abs, hip flexors",["Forearms on the pads, back against the pad.","Raise your knees toward your chest, curling your pelvis.","Pause at the top.","Lower slowly."],["Swinging","Not curling the pelvis"],["Hanging knee raise","Lying leg raise"]],
+ "Captain's chair leg raise":["legraise","Lower abs, hip flexors",["Forearms on the pads, back flat.","Raise straight legs to parallel or higher.","Curl your pelvis at the top.","Lower slowly."],["Swinging","Half range"],["Hanging leg raise","Captain's chair knee raise"]]
+};
+function exInfo(name){return EXDB[name]||EXTRA[name]||null;}
+function exNames(){return Object.keys(EXDB).concat(Object.keys(EXTRA)).sort();}
+
 
 /* ===================== PROGRAM DATA ===================== */
 const PH = {
@@ -445,18 +884,28 @@ function progressionHint(ex,n){
 }
 
 /* ===================== WORKOUT FLOW ===================== */
+const COMPOUND_PATS=["bench","incline","ohp","squat","hinge","trapbar","split","legpress","pulldown","pullup","row","dbrow","pushup"];
+function exType(name){const i=exInfo(name);return i&&COMPOUND_PATS.includes(i[0])?"C":"I";}
+function dayExercises(key){
+  const sw=S.settings.swaps||{}, extra=(S.settings.extras||{})[key]||[];
+  const base=[];
+  DAYS[key].ex.forEach(e=>{const to=sw[key+"|"+e.n]; if(to==="-") return; base.push(to&&to!==e.n?Object.assign({},e,{n:to,note:"",from:e.n}):e);});
+  return base.concat(extra.map(x=>E(x.n,x.s,x.r,x.t,x.rest,"",{added:1})));
+}
+function activeEx(ex,n){
+  const last=lastSession(ex.n);
+  return {n:ex.n,t:ex.t,rest:ex.rest,note:ex.note,base:ex.from||ex.n,from:ex.from||"",added:!!ex.added,src:ex,
+    target:targetText(ex,n),hint:progressionHint(ex,n),
+    sets:buildSets(ex,n).map((s,i)=>{
+      const p=last&&last.e.sets[i]?last.e.sets[i]:(last?last.e.sets[last.e.sets.length-1]:null);
+      return Object.assign(s,{pw:p?p.w:"",pr:p?p.r:"",w:"",r:"",ar:"",done:false});
+    })};
+}
 function startWorkout(key){
   const n=Math.max(1,weekNum());
   const d=DAYS[key];
   S.active={id:uid(),key,title:dayLabel(key)+": "+d.title,week:n,phase:phaseOf(n),start:Date.now(),unit:S.settings.unit,
-    ex:d.ex.map(ex=>{
-      const last=lastSession(ex.n);
-      return {n:ex.n,t:ex.t,rest:ex.rest,note:ex.note,target:targetText(ex,n),hint:progressionHint(ex,n),
-        sets:buildSets(ex,n).map((s,i)=>{
-          const p=last&&last.e.sets[i]?last.e.sets[i]:(last?last.e.sets[last.e.sets.length-1]:null);
-          return Object.assign(s,{pw:p?p.w:"",pr:p?p.r:"",w:"",r:"",ar:"",done:false});
-        })};
-    })};
+    ex:dayExercises(key).map(ex=>activeEx(ex,n))};
   Store.saveActive(); closeSheet(); renderWorkout(); render();
 }
 function finishWorkout(){
@@ -576,7 +1025,7 @@ function viewToday(){
     const d=DAYS[next];
     h+=`<section class="card wcard"><div class="row between"><div class="label">Up next</div><span class="small muted">${d.dow}</span></div>
       <div class="wtitle">${dayLabel(next)}: ${esc(d.title)}</div>
-      <div class="exlist">${d.ex.map(e=>`<div><span>${esc(e.n)}</span><span>${esc(targetText(e,nn))}</span></div>`).join("")}</div>
+      <div class="exlist">${dayExercises(next).map(e=>`<div data-a="info" data-v="${esc(e.n)}" style="cursor:pointer"><span>${esc(e.n)}${e.from||e.added?' <span style="color:var(--warn)">&bull;</span>':""}</span><span>${esc(targetText(e,nn))}</span></div>`).join("")}</div>
       <button class="btn primary block" data-a="start" data-v="${next}">${S.active?"Start (replaces current)":"Start workout"}</button></section>`;
   } else {
     h+=`<section class="card"><div class="htitle">All workouts done this week</div><p class="muted small" style="margin:6px 0 0">Get your cardio and steps in. Next week loads automatically on Monday.</p></section>`;
@@ -586,7 +1035,7 @@ function viewToday(){
     <button class="btn block ghost" data-a="logCardio">Log cardio</button></section>`;
   h+=`<section class="stack"><div class="label">All workouts this phase</div>${keys.map(k=>{
       const d=DAYS[k]; const dn=doneKeys.has(k);
-      return `<button class="card row between" data-a="preview" data-v="${k}" style="width:100%;text-align:left"><div><div class="htitle">${dayLabel(k)}: ${esc(d.title)}</div><div class="small muted">${d.dow} &middot; ${d.ex.length} exercises</div></div>${dn?'<span class="donebadge">DONE</span>':'<span class="muted">&rsaquo;</span>'}</button>`;}).join("")}</section>
+      return `<button class="card row between" data-a="preview" data-v="${k}" style="width:100%;text-align:left"><div><div class="htitle">${dayLabel(k)}: ${esc(d.title)}</div><div class="small muted">${d.dow} &middot; ${dayExercises(k).length} exercises</div></div>${dn?'<span class="donebadge">DONE</span>':'<span class="muted">&rsaquo;</span>'}</button>`;}).join("")}</section>
   <button class="btn ghost block" data-a="plan">View the 15-week plan</button></div>`;
   return h;
 }
@@ -616,7 +1065,9 @@ function renderWorkout(){
   a.ex.forEach((e,ei)=>{
     h+=`<section class="exc" id="ex${ei}">
       <div class="row between" style="align-items:flex-start"><div><div class="exname">${esc(e.n)}</div>
-      <div class="exmeta"><span class="tag ${e.t}">${e.t==="TOP"?"TOP SET":e.t==="C"?"COMPOUND":"ISOLATION"}</span> &nbsp;${esc(e.target)} &middot; rest ${e.rest?mmss(e.rest):"none (superset)"}${e.note?" &middot; "+esc(e.note):""}</div></div></div>
+      <div class="exmeta"><span class="tag ${e.t}">${e.t==="TOP"?"TOP SET":e.t==="C"?"COMPOUND":"ISOLATION"}</span> &nbsp;${esc(e.target)} &middot; rest ${e.rest?mmss(e.rest):"none (superset)"}${e.note?" &middot; "+esc(e.note):""}</div>
+      ${e.from?`<div class="swapnote">Swapped from ${esc(e.from)}</div>`:e.added?`<div class="swapnote">Added exercise</div>`:""}</div>
+      <button class="ibtn" data-a="info" data-e="${ei}" aria-label="How to do ${esc(e.n)}">i</button></div>
       <div class="hint">${e.hint}</div>
       <div class="sets"><div class="h">Set</div><div class="h">Previous</div><div class="h">${esc(unit)}</div><div class="h">Reps</div><div class="h">RPE</div><div class="h"></div>`;
     e.sets.forEach((s,si)=>{
@@ -629,9 +1080,10 @@ function renderWorkout(){
         <input class="in rpe" id="p-${ei}-${si}" inputmode="decimal" placeholder="${esc(s.rpe)}" value="${esc(s.ar)}" data-f="ar" data-e="${ei}" data-s="${si}" aria-label="RPE set ${si+1}">
         <button class="chk" data-a="check" data-e="${ei}" data-s="${si}" aria-label="Complete set ${si+1}">${ICONS.check}</button></div>`;
     });
-    h+=`</div><div class="exfoot"><button class="btn sm ghost" data-a="addSet" data-e="${ei}">+ Add set</button><button class="btn sm ghost" data-a="rmSet" data-e="${ei}">- Remove set</button></div></section>`;
+    h+=`</div><div class="exfoot"><button class="btn sm ghost" data-a="addSet" data-e="${ei}">+ Set</button><button class="btn sm ghost" data-a="rmSet" data-e="${ei}">&minus; Set</button><button class="btn sm ghost" style="margin-left:auto" data-a="swap" data-e="${ei}">&#8644; Swap</button></div></section>`;
   });
-  h+=`<div class="stack" style="margin-top:16px"><button class="btn primary block" data-a="finish">Finish workout</button><button class="btn danger block" data-a="discard">Discard workout</button></div>
+  h+=`<button class="btn ghost block" style="margin-top:12px;border-style:dashed" data-a="addEx">+ Add exercise</button>
+    <div class="stack" style="margin-top:16px"><button class="btn primary block" data-a="finish">Finish workout</button><button class="btn danger block" data-a="discard">Discard workout</button></div>
     <p class="small muted" style="text-align:center;margin-top:12px">Target reps show in grey. Tap the check to log a set and start your rest timer.</p></div></div>`;
   el.innerHTML=h;
 }
@@ -747,11 +1199,116 @@ function sheetConfirm(title,msg,okLabel,cb,danger){
     ${cb?`<button class="btn ${danger?"danger":"primary"} block" data-a="confirmOk">${esc(okLabel)}</button><button class="btn ghost block" data-a="closeSheet">Cancel</button>`:`<button class="btn primary block" data-a="closeSheet">${esc(okLabel)}</button>`}</div>`);
 }
 function sheetPreview(k){
-  const n=Math.max(1,weekNum()), d=DAYS[k];
+  const n=Math.max(1,weekNum()), d=DAYS[k], list=dayExercises(k);
   openSheet(`<div class="label">Week ${n} &middot; ${d.dow}</div><h2>${dayLabel(k)}: ${esc(d.title)}</h2>
-    <div class="exlist" style="margin:12px 0 16px">${d.ex.map(e=>`<div><span>${esc(e.n)}<br><span class="muted" style="font-family:var(--body);font-size:12px;font-weight:500">${e.t==="TOP"?"Top set":e.t==="C"?"Compound":"Isolation"} &middot; rest ${e.rest?mmss(e.rest):"superset"}${e.note?" &middot; "+esc(e.note):""}</span></span><span>${esc(targetText(e,n))}</span></div>`).join("")}</div>
+    <p class="small muted" style="margin:6px 0 0">Tap an exercise to see how to do it.</p><div class="exlist" style="margin:8px 0 16px">${list.map(e=>`<div data-a="info" data-v="${esc(e.n)}" style="cursor:pointer"><span><span style="text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px">${esc(e.n)}</span>${e.from?' <span class="swapnote" style="display:inline">(swap)</span>':e.added?' <span class="swapnote" style="display:inline">(added)</span>':""}<br><span class="muted" style="font-family:var(--body);font-size:12px;font-weight:500">${e.t==="TOP"?"Top set":e.t==="C"?"Compound":"Isolation"} &middot; rest ${e.rest?mmss(e.rest):"superset"}${e.note?" &middot; "+esc(e.note):""}</span></span><span>${esc(targetText(e,n))}</span></div>`).join("")}</div>
     <div class="stack"><button class="btn primary block" data-a="start" data-v="${k}">${S.active?"Start (replaces current)":"Start workout"}</button><button class="btn ghost block" data-a="closeSheet">Close</button></div>`);
 }
+/* ---------- Exercise guide, swap, add ---------- */
+function pickRow(name,action,extra){
+  const i=exInfo(name);
+  return `<button class="pick" data-a="${action}" data-v="${esc(name)}"${extra||""}><span><div class="pn">${esc(name)}</div><div class="pm">${i?esc(i[1]):"Custom"}</div></span><span class="muted" style="font-size:20px">&rsaquo;</span></button>`;
+}
+function sheetInfo(name,ei){
+  const i=exInfo(name), inW=ei!=null&&S.active;
+  if(!i){openSheet(`<h2>${esc(name)}</h2><p class="muted">No guide for this one yet.</p><button class="btn ghost block" data-a="closeSheet">Close</button>`);return;}
+  const [pat,musc,steps,miss,alts]=i;
+  openSheet(`<div class="guide"><div class="label">${esc(musc)}</div><h2 style="font-size:26px;line-height:1.1">${esc(name)}</h2>
+    ${diagram(pat)}<p class="small muted" style="margin:0">Simple diagram showing the movement, not to scale.</p>
+    <h3>How to do it</h3><ol>${steps.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>
+    <h3>Avoid</h3><ul>${miss.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
+    <h3>Alternatives</h3><p class="small muted" style="margin:0 0 4px">${inW?"Tap one to swap it in.":"Tap one to see how it's done."}</p>
+    <div>${alts.map(a=>pickRow(a,inW?"swapPick":"info",inW?` data-e="${ei}"`:"")).join("")}</div>
+    <button class="btn ghost block" style="margin-top:14px" data-a="closeSheet">Close</button></div>`);
+}
+function sheetSwap(ei){
+  const e=S.active.ex[ei], i=exInfo(e.base)||exInfo(e.n);
+  const sugg=[...new Set(((i&&i[4])||[]).concat((exInfo(e.n)||[])[4]||[]))].filter(x=>x!==e.n&&x!==e.base);
+  openSheet(`<div class="label">Change exercise</div><h2 style="font-size:24px;line-height:1.1">${esc(e.n)}</h2>
+    ${e.from?`<div style="margin-top:10px">${pickRow(e.base,"swapPick",` data-e="${ei}"`).replace('class="pn">','class="pn">Back to original: ')}</div>`:""}
+    <div class="label" style="margin-top:14px">Suggested swaps</div>
+    <div>${sugg.map(a=>pickRow(a,"swapPick",` data-e="${ei}"`)).join("")}</div>
+    <div class="label" style="margin-top:14px">Or search all exercises</div>
+    <input class="search" id="ex-search" data-mode="swap" data-e="${ei}" type="search" placeholder="Search, e.g. row, curl, squat" autocomplete="off" style="margin-top:6px">
+    <div id="ex-results"></div>
+    <div class="stack" style="margin-top:16px"><button class="btn danger block" data-a="removeEx" data-e="${ei}">Remove from this workout</button><button class="btn ghost block" data-a="closeSheet">Cancel</button></div>`);
+}
+function searchResults(q,mode,ei){
+  q=q.trim().toLowerCase(); if(!q) return "";
+  const hits=exNames().filter(n=>n.toLowerCase().includes(q)||(exInfo(n)[1]||"").toLowerCase().includes(q)).slice(0,25);
+  if(!hits.length) return `<p class="small muted">No match. Try a muscle like "chest" or "hamstrings".</p>`;
+  return hits.map(n=>pickRow(n,mode==="swap"?"swapPick":"addPick",mode==="swap"?` data-e="${ei}"`:"")).join("");
+}
+function sheetSwapScope(ei,name){
+  const e=S.active.ex[ei], done=e.sets.some(s=>s.done), dl=dayLabel(S.active.key);
+  openSheet(`<div class="label">Swap</div><h2 style="font-size:22px;line-height:1.15">${esc(e.n)} &rarr; ${esc(name)}</h2>
+    ${done?`<p class="small" style="color:var(--warn)">Sets you already checked off for ${esc(e.n)} will be cleared.</p>`:""}
+    <p class="muted small">Same sets, reps and RPE as the plan. The app tracks your weights for ${esc(name)} separately.</p>
+    <div class="stack" style="margin-top:12px"><button class="btn primary block" data-a="swapDo" data-e="${ei}" data-v="${esc(name)}" data-always="0">Just today</button>
+    <button class="btn block" data-a="swapDo" data-e="${ei}" data-v="${esc(name)}" data-always="1">Every ${esc(dl)} from now on</button>
+    <button class="btn ghost block" data-a="swap" data-e="${ei}">Back</button></div>`);
+}
+function doSwap(ei,name,always){
+  const a=S.active, e=a.ex[ei], key=a.key;
+  const src=Object.assign({},e.src,{n:name,note:name===e.base?(DAYS[key].ex.find(x=>x.n===e.base)||{}).note||"":"",from:name===e.base?"":e.base});
+  if(e.added) delete src.from;
+  if(e.added) src.added=1;
+  a.ex[ei]=activeEx(src,a.week);
+  if(always){
+    if(e.added){const list=(S.settings.extras=S.settings.extras||{})[key]||[];const x=list.find(x=>x.n===e.n);if(x){x.n=name;x.t=exType(name);}}
+    else{S.settings.swaps=S.settings.swaps||{}; if(name===e.base) delete S.settings.swaps[key+"|"+e.base]; else S.settings.swaps[key+"|"+e.base]=name;}
+    Store.saveSettings();
+  }
+  Store.saveActive(); closeSheet(); renderWorkoutKeepScroll(); toast(always?"Swapped for every "+dayLabel(key):"Swapped for today");
+}
+function sheetRemove(ei){
+  const e=S.active.ex[ei], dl=dayLabel(S.active.key);
+  openSheet(`<div class="label">Remove</div><h2 style="font-size:24px">${esc(e.n)}</h2><div class="stack" style="margin-top:12px">
+    <button class="btn danger block" data-a="removeDo" data-e="${ei}" data-always="0">Remove today only</button>
+    <button class="btn danger block" data-a="removeDo" data-e="${ei}" data-always="1">Remove from every ${esc(dl)}</button>
+    <button class="btn ghost block" data-a="swap" data-e="${ei}">Back</button></div>`);
+}
+function doRemove(ei,always){
+  const a=S.active, e=a.ex[ei], key=a.key;
+  a.ex.splice(ei,1);
+  if(always){
+    if(e.added){const ex=S.settings.extras||{}; ex[key]=(ex[key]||[]).filter(x=>x.n!==e.n);}
+    else{S.settings.swaps=S.settings.swaps||{}; S.settings.swaps[key+"|"+e.base]="-";}
+    Store.saveSettings();
+  }
+  Store.saveActive(); closeSheet(); renderWorkoutKeepScroll(); toast("Removed");
+}
+function sheetAdd(){
+  const common=["Face pull","Dips","Barbell curl","Cable curl","Machine lateral raise","Leg press calf raise","Plank","Walking lunge","Back extension","Machine crunch"];
+  openSheet(`<div class="label">Add exercise</div><h2>Add to ${esc(dayLabel(S.active.key))}</h2>
+    <input class="search" id="ex-search" data-mode="add" type="search" placeholder="Search, e.g. calves, arms, abs" autocomplete="off" style="margin-top:10px">
+    <div id="ex-results"></div>
+    <div class="label" style="margin-top:14px">Popular add-ons</div>
+    <div>${common.map(n=>pickRow(n,"addPick")).join("")}</div>
+    <button class="btn ghost block" style="margin-top:14px" data-a="closeSheet">Cancel</button>`);
+}
+function sheetAddConfig(name){
+  const t=exType(name), dl=dayLabel(S.active.key);
+  openSheet(`<div class="label">${t==="C"?"Compound":"Isolation"}</div><h2 style="font-size:24px;line-height:1.1">${esc(name)}</h2>
+    <div class="stack" style="margin-top:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+      <div class="field"><label class="label" for="ad-s">Sets</label><input id="ad-s" inputmode="numeric" value="3"></div>
+      <div class="field"><label class="label" for="ad-r">Reps</label><input id="ad-r" value="${t==="C"?"8-10":"12-15"}"></div>
+      <div class="field"><label class="label" for="ad-rest">Rest (s)</label><input id="ad-rest" inputmode="numeric" value="${t==="C"?120:60}"></div></div>
+    <button class="btn primary block" data-a="addDo" data-v="${esc(name)}" data-always="0">Add to today only</button>
+    <button class="btn block" data-a="addDo" data-v="${esc(name)}" data-always="1">Add to every ${esc(dl)}</button>
+    <button class="btn ghost block" data-a="addEx">Back</button></div>`);
+}
+function doAdd(name,always){
+  const sets=Math.max(1,Math.min(10,parseInt($("#ad-s").value,10)||3)), reps=($("#ad-r").value||"10").trim(), rest=Math.max(0,parseInt($("#ad-rest").value,10)||60), t=exType(name);
+  const a=S.active; a.ex.push(activeEx(E(name,sets,reps,t,rest,"",{added:1}),a.week));
+  if(always){const ex=S.settings.extras=S.settings.extras||{}; (ex[a.key]=ex[a.key]||[]).push({n:name,s:sets,r:reps,t,rest}); Store.saveSettings();}
+  Store.saveActive(); closeSheet(); renderWorkout();
+  const el=$("#ex"+(a.ex.length-1)); if(el) el.scrollIntoView({block:"start"});
+  toast(name+" added");
+}
+function customCount(){const sw=Object.keys(S.settings.swaps||{}).length, ex=Object.values(S.settings.extras||{}).reduce((t,l)=>t+l.length,0);return sw+ex;}
+
 function sheetSettings(){
   const s=S.settings, age=backupAge();
   openSheet(`<h2>Settings</h2><div class="stack" style="margin-top:12px">
@@ -759,6 +1316,9 @@ function sheetSettings(){
     <div class="field"><span class="label">Lifting units</span><div class="seg"><button class="${s.unit==="lb"?"on":""}" data-a="unit" data-v="lb">lb</button><button class="${s.unit==="kg"?"on":""}" data-a="unit" data-v="kg">kg</button></div></div>
     <div class="field"><label class="label" for="set-week">Week</label><select id="set-week"><option value="0">Automatic from start date (week ${weekNum()||1})</option>${Array.from({length:16},(_,i)=>`<option value="${i+1}" ${s.weekOverride===i+1?"selected":""}>${i+1===16?"March (maintain)":"Week "+(i+1)}</option>`).join("")}</select></div>
     <button class="btn primary block" data-a="saveSettings">Save settings</button>
+    ${customCount()?`<div style="height:1px;background:var(--line);margin:6px 0"></div><div><div class="label">Your exercise changes</div>
+      <p class="small muted" style="margin:4px 0 0">${Object.entries(S.settings.swaps||{}).map(([k,v])=>esc(dayLabel(k.split("|")[0]))+": "+esc(k.split("|")[1])+" &rarr; "+(v==="-"?"removed":esc(v))).concat(Object.entries(S.settings.extras||{}).flatMap(([k,l])=>l.map(x=>esc(dayLabel(k))+": + "+esc(x.n)))).join("<br>")}</p></div>
+      <button class="btn ghost block" data-a="resetCustom">Reset all workouts to the plan</button>`:""}
     <div style="height:1px;background:var(--line);margin:6px 0"></div>
     <div><div class="label">Backup</div><p class="small muted" style="margin:4px 0 0">Your data lives only on this phone. Save a backup to Files or iCloud Drive every week. ${age===null?"<b style='color:var(--warn)'>No backup yet.</b>":"Last backup: "+(age===0?"today":age+" days ago")+"."}</p></div>
     <button class="btn block" data-a="exportShare">Save backup file</button>
@@ -862,6 +1422,16 @@ document.addEventListener("click",ev=>{
       } else s.done=false;
       Store.saveActive(); renderWorkoutKeepScroll(); break;
     }
+    case "info": if(t.dataset.e!=null&&S.active&&!t.dataset.v) sheetInfo(S.active.ex[+t.dataset.e].n,+t.dataset.e); else sheetInfo(v,null); break;
+    case "swap": sheetSwap(+t.dataset.e); break;
+    case "swapPick": sheetSwapScope(+t.dataset.e,v); break;
+    case "swapDo": doSwap(+t.dataset.e,v,t.dataset.always==="1"); break;
+    case "removeEx": sheetRemove(+t.dataset.e); break;
+    case "removeDo": doRemove(+t.dataset.e,t.dataset.always==="1"); break;
+    case "addEx": sheetAdd(); break;
+    case "addPick": sheetAddConfig(v); break;
+    case "addDo": doAdd(v,t.dataset.always==="1"); break;
+    case "resetCustom": sheetConfirm("Reset to the plan?","All swaps, removed exercises and added exercises go back to the original program. Your logged history stays.","Reset",()=>{S.settings.swaps={};S.settings.extras={};Store.saveSettings();render();toast("Back to the original plan");},true); break;
     case "addSet": {const e=S.active.ex[+t.dataset.e];const l=e.sets[e.sets.length-1];e.sets.push({k:"",tr:l.tr,rpe:l.rpe,pw:l.pw,pr:l.pr,w:"",r:"",ar:"",done:false});Store.saveActive();renderWorkoutKeepScroll();break;}
     case "rmSet": {const e=S.active.ex[+t.dataset.e];if(e.sets.length>1){e.sets.pop();Store.saveActive();renderWorkoutKeepScroll();}break;}
     case "rest-15": if(S.rest){S.rest.end-=15000;tickRest();} break;
@@ -900,6 +1470,7 @@ document.addEventListener("click",ev=>{
 });
 document.addEventListener("input",ev=>{
   const t=ev.target;
+  if(t.id==="ex-search"){$("#ex-results").innerHTML=searchResults(t.value,t.dataset.mode,t.dataset.e);return;}
   if(t.dataset&&t.dataset.f&&S.active){
     const s=S.active.ex[+t.dataset.e].sets[+t.dataset.s];
     s[t.dataset.f]=t.value.replace(",","."); Store.saveActive();
