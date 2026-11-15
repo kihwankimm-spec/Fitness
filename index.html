@@ -184,6 +184,9 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .pick .pn{font-weight:600;line-height:1.25}
 .pick .pm{font-size:13px;color:var(--muted)}
 .swapnote{font-size:12px;color:var(--warn);margin-top:3px}
+.note{width:100%;margin-top:8px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);padding:10px;font:inherit;font-size:15px;resize:vertical}
+.lastnote{margin-top:8px;font-size:13px;padding:7px 10px;border-radius:9px;background:rgba(233,180,76,.1);color:var(--text)}
+.lastnote b{color:var(--warn)}
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translateX(-50%);z-index:90;background:var(--surface-2);border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -782,7 +785,7 @@ function toast(msg){const t=$("#toast");t.innerHTML='<div class="toast">'+esc(ms
 /* ===================== STATE + STORAGE ===================== */
 const S = {
   tab:"today", view:null,
-  settings:Object.assign({start:"2026-11-16",unit:"lb",weekOverride:0},lsGet("mr_settings",{})),
+  settings:Object.assign({start:"2026-11-16",unit:"lb",weekOverride:0,sound:"mix",countdown:true,awake:true},lsGet("mr_settings",{})),
   workouts:lsGet("mr_workouts",[]),
   body:lsGet("mr_body",[]),
   cardio:lsGet("mr_cardio",[]),
@@ -857,6 +860,7 @@ function targetText(ex,n){
 }
 
 /* History lookups */
+function lastNoteFor(name){for(const w of S.workouts){const e=(w.ex||[]).find(x=>x.n===name&&x.note);if(e)return {note:e.note,date:w.date};}return null;}
 function lastSession(name,excludeId){
   for(const w of S.workouts){ if(w.id===excludeId) continue;
     const e=(w.ex||[]).find(x=>x.n===name); if(e&&e.sets&&e.sets.length) return {w,e}; }
@@ -894,7 +898,8 @@ function dayExercises(key){
 }
 function activeEx(ex,n){
   const last=lastSession(ex.n);
-  return {n:ex.n,t:ex.t,rest:ex.rest,note:ex.note,base:ex.from||ex.n,from:ex.from||"",added:!!ex.added,src:ex,
+  const ln=lastNoteFor(ex.n);
+  return {n:ex.n,t:ex.t,rest:ex.rest,note:ex.note,mynote:"",lastNote:ln?ln.note:"",lastNoteDate:ln?ln.date:"",base:ex.from||ex.n,from:ex.from||"",added:!!ex.added,src:ex,
     target:targetText(ex,n),hint:progressionHint(ex,n),
     sets:buildSets(ex,n).map((s,i)=>{
       const p=last&&last.e.sets[i]?last.e.sets[i]:(last?last.e.sets[last.e.sets.length-1]:null);
@@ -906,19 +911,20 @@ function startWorkout(key){
   const d=DAYS[key];
   S.active={id:uid(),key,title:dayLabel(key)+": "+d.title,week:n,phase:phaseOf(n),start:Date.now(),unit:S.settings.unit,
     ex:dayExercises(key).map(ex=>activeEx(ex,n))};
-  Store.saveActive(); closeSheet(); renderWorkout(); render();
+  Store.saveActive(); closeSheet(); renderWorkout(); render(); ensureAudio(); keepAwake(true);
 }
 function finishWorkout(){
   const a=S.active; if(!a) return;
-  const ex=a.ex.map(e=>({n:e.n,t:e.t,sets:e.sets.filter(s=>s.done).map(s=>({k:s.k,w:Number(s.w)||0,r:Number(s.r)||0,rpe:s.ar||""}))})).filter(e=>e.sets.length);
-  if(!ex.length){sheetConfirm("No sets checked","Check off at least one set, or discard this workout.","Keep going",null);return;}
+  const ex=a.ex.map(e=>{const o={n:e.n,t:e.t,sets:e.sets.filter(s=>s.done).map(s=>({k:s.k,w:Number(s.w)||0,r:Number(s.r)||0,rpe:s.ar||""}))};if((e.mynote||"").trim())o.note=e.mynote.trim();return o;}).filter(e=>e.sets.length||e.note);
+  if(!ex.some(e=>e.sets.length)){sheetConfirm("No sets checked","Check off at least one set, or discard this workout.","Keep going",null);return;}
   const date=new Date(a.start).toISOString();
   const prs=[];
   ex.forEach(e=>{const prev=bestE1(e.n,date);const now=Math.max(...e.sets.map(s=>e1rm(s.w,s.r)));if(prev>0&&now>prev+0.01)prs.push(e.n);});
   const vol=ex.reduce((t,e)=>t+e.sets.reduce((u,s)=>u+s.w*s.r,0),0);
   const doc={date,key:a.key,title:a.title,week:a.week,phase:a.phase,unit:a.unit,min:Math.round((Date.now()-a.start)/60000),vol:Math.round(vol),sets:ex.reduce((t,e)=>t+e.sets.length,0),prs,ex};
+  if((a.note||"").trim()) doc.note=a.note.trim();
   Store.put("workouts",a.id,doc);
-  S.active=null; Store.saveActive(); stopRest();
+  S.active=null; Store.saveActive(); stopRest(); keepAwake(false);
   renderWorkout(); render();
   openSheet(`<h2>Workout done</h2>
     <div class="stat" style="margin:14px 0"><div><b class="num">${doc.min}</b><span>minutes</span></div>
@@ -929,22 +935,50 @@ function finishWorkout(){
 }
 
 /* Rest timer */
-let actx=null;
-function ensureAudio(){try{if(!actx){const A=window.AudioContext||window.webkitAudioContext;if(A)actx=new A();}if(actx&&actx.state==="suspended")actx.resume();}catch(e){}}
-function beep(){try{if(!actx)return;[0,.25,.5].forEach(t=>{const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=880;o.connect(g);g.connect(actx.destination);g.gain.setValueAtTime(.0001,actx.currentTime+t);g.gain.exponentialRampToValueAtTime(.3,actx.currentTime+t+.02);g.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+t+.18);o.start(actx.currentTime+t);o.stop(actx.currentTime+t+.2);});}catch(e){}}
-function startRest(sec,name){if(!sec){stopRest();return;}S.rest={end:Date.now()+sec*1000,total:sec,name,beeped:false};tickRest();}
-function stopRest(){S.rest=null;const r=$("#rest");r.className="restbar";}
+let actx=null, restNodes=[], wakeLock=null;
+function setSessionType(){try{if(navigator.audioSession)navigator.audioSession.type=S.settings.sound==="loud"?"playback":"ambient";}catch(e){}}
+function ensureAudio(){setSessionType();try{if(!actx){const A=window.AudioContext||window.webkitAudioContext;if(A)actx=new A();}if(actx&&actx.state!=="running")actx.resume();}catch(e){}}
+function tone(freq,at,dur,vol){
+  const o=actx.createOscillator(),g=actx.createGain();o.type="sine";o.frequency.value=freq;o.connect(g);g.connect(actx.destination);
+  g.gain.setValueAtTime(0.0001,at);g.gain.exponentialRampToValueAtTime(vol,at+0.008);g.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+  o.start(at);o.stop(at+dur+0.05);return o;
+}
+/* Bell: a bright fundamental plus two inharmonic partials, struck twice */
+function ding(at){const out=[];[0,0.6].forEach(off=>{const t=at+off;out.push(tone(1318.5,t,1.5,0.6),tone(3639,t,0.7,0.16),tone(7120,t,0.3,0.06));});return out;}
+function tick(at){return [tone(988,at,0.12,0.3)];}
+function cancelRestSound(){restNodes.forEach(n=>{try{n.stop();}catch(e){}});restNodes=[];}
+function scheduleRestSound(){
+  cancelRestSound(); if(!S.rest||!actx) return;
+  const left=(S.rest.end-Date.now())/1000; if(left<=0) return;
+  const t0=actx.currentTime; S.rest.audioAt=t0+left;
+  if(S.settings.countdown&&left>4) [3,2,1].forEach(k=>{restNodes=restNodes.concat(tick(t0+left-k));});
+  restNodes=restNodes.concat(ding(t0+left));
+}
+function testSound(){ensureAudio();if(!actx){toast("Sound is not available here");return;}const t=actx.currentTime+0.1;if(S.settings.countdown)[0,1,2].forEach(k=>tick(t+k));ding(t+(S.settings.countdown?3:0));}
+async function keepAwake(on){
+  try{
+    if(on&&S.settings.awake&&S.active&&"wakeLock" in navigator){if(!wakeLock){wakeLock=await navigator.wakeLock.request("screen");wakeLock.addEventListener("release",()=>{wakeLock=null;});}}
+    else if(!on&&wakeLock){const w=wakeLock;wakeLock=null;await w.release();}
+  }catch(e){}
+}
+function startRest(sec,name){if(!sec){stopRest();return;}S.rest={end:Date.now()+sec*1000,total:sec,name,beeped:false};scheduleRestSound();tickRest();}
+function stopRest(){cancelRestSound();S.rest=null;const r=$("#rest");r.className="restbar";}
+function clockTime(ms){return new Date(ms).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"});}
 function tickRest(){
   const r=$("#rest"); if(!S.rest){r.className="restbar";return;}
-  const left=(S.rest.end-Date.now())/1000; const over=left<=0;
-  if(over&&!S.rest.beeped){S.rest.beeped=true;beep();try{navigator.vibrate&&navigator.vibrate([200,100,200]);}catch(e){}}
-  if(left<-30){stopRest();return;}
+  const left=(S.rest.end-Date.now())/1000, over=left<=0;
+  if(over&&!S.rest.beeped){
+    S.rest.beeped=true;
+    const played=actx&&actx.state==="running"&&S.rest.audioAt&&actx.currentTime>=S.rest.audioAt-0.05;
+    if(!played){cancelRestSound(); if(left>-4&&actx){try{ding(actx.currentTime+0.02);}catch(e){}}}
+  }
+  if(left<-600){stopRest();return;}
   r.className="restbar show"+(over?" over":"");
   const pct=Math.max(0,Math.min(100,100*(1-left/S.rest.total)));
-  r.innerHTML=`<div class="restin"><div style="flex:1"><div class="row"><div class="restt num">${over?"GO":mmss(left)}</div>
-    <div class="small" style="line-height:1.2"><div style="font-weight:700">${over?"Rest over":"Resting"}</div><div style="opacity:.75">${esc(S.rest.name)}</div></div></div>
+  r.innerHTML=`<div class="restin"><div style="flex:1;min-width:0"><div class="row" style="min-width:0"><div class="restt num">${over?"+"+mmss(-left):mmss(left)}</div>
+    <div class="small" style="line-height:1.25;min-width:0"><div style="font-weight:700;white-space:nowrap">${over?"Next set!":"Ends "+clockTime(S.rest.end)}</div><div style="opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(S.rest.name)}</div></div></div>
     <div class="restp"><i style="width:${pct}%"></i></div></div>
-    <button class="btn sm ghost" data-a="rest-15">-15</button><button class="btn sm ghost" data-a="rest+15">+15</button><button class="btn sm" data-a="restSkip">${over?"Close":"Skip"}</button></div>`;
+    ${over?"":`<button class="btn sm ghost" data-a="rest-15">-15</button><button class="btn sm ghost" data-a="rest+15">+15</button>`}<button class="btn sm" data-a="restSkip">${over?"Close":"Skip"}</button></div>`;
 }
 setInterval(()=>{if(S.rest)tickRest();if(S.active){const c=$("#wkclock");if(c)c.textContent=hms((Date.now()-S.active.start)/1000);}},500);
 
@@ -1069,6 +1103,7 @@ function renderWorkout(){
       ${e.from?`<div class="swapnote">Swapped from ${esc(e.from)}</div>`:e.added?`<div class="swapnote">Added exercise</div>`:""}</div>
       <button class="ibtn" data-a="info" data-e="${ei}" aria-label="How to do ${esc(e.n)}">i</button></div>
       <div class="hint">${e.hint}</div>
+      ${e.lastNote?`<div class="lastnote"><b>Your note ${esc(fmtShort(e.lastNoteDate.slice(0,10)))}:</b> ${esc(e.lastNote)}</div>`:""}
       <div class="sets"><div class="h">Set</div><div class="h">Previous</div><div class="h">${esc(unit)}</div><div class="h">Reps</div><div class="h">RPE</div><div class="h"></div>`;
     e.sets.forEach((s,si)=>{
       const lab=s.k==="Top"?"TOP":s.k==="Back"?"B"+si:s.k==="Drop"?"DROP":String(si+1);
@@ -1080,9 +1115,11 @@ function renderWorkout(){
         <input class="in rpe" id="p-${ei}-${si}" inputmode="decimal" placeholder="${esc(s.rpe)}" value="${esc(s.ar)}" data-f="ar" data-e="${ei}" data-s="${si}" aria-label="RPE set ${si+1}">
         <button class="chk" data-a="check" data-e="${ei}" data-s="${si}" aria-label="Complete set ${si+1}">${ICONS.check}</button></div>`;
     });
-    h+=`</div><div class="exfoot"><button class="btn sm ghost" data-a="addSet" data-e="${ei}">+ Set</button><button class="btn sm ghost" data-a="rmSet" data-e="${ei}">&minus; Set</button><button class="btn sm ghost" style="margin-left:auto" data-a="swap" data-e="${ei}">&#8644; Swap</button></div></section>`;
+    h+=`</div><div class="exfoot"><button class="btn sm ghost" data-a="addSet" data-e="${ei}">+ Set</button><button class="btn sm ghost" data-a="rmSet" data-e="${ei}">&minus; Set</button><button class="btn sm ghost" data-a="noteToggle" data-e="${ei}">${e.mynote?"Note \u2713":"+ Note"}</button><button class="btn sm ghost" style="margin-left:auto" data-a="swap" data-e="${ei}">&#8644; Swap</button></div>
+      ${e.mynote||e.showNote?`<textarea class="note" id="n-${ei}" data-note="${ei}" rows="2" placeholder="Seat height, grip, how it felt, pain...">${esc(e.mynote)}</textarea>`:""}</section>`;
   });
   h+=`<button class="btn ghost block" style="margin-top:12px;border-style:dashed" data-a="addEx">+ Add exercise</button>
+    <div class="exc"><label class="label" for="wnote">Workout notes</label><textarea class="note" id="wnote" data-wnote="1" rows="3" placeholder="Energy, sleep, what to change next time...">${esc(a.note||"")}</textarea></div>
     <div class="stack" style="margin-top:16px"><button class="btn primary block" data-a="finish">Finish workout</button><button class="btn danger block" data-a="discard">Discard workout</button></div>
     <p class="small muted" style="text-align:center;margin-top:12px">Target reps show in grey. Tap the check to log a set and start your rest timer.</p></div></div>`;
   el.innerHTML=h;
@@ -1103,9 +1140,9 @@ function viewHistory(){
     const open=S.openHist===w.id; const col=PH[w.phase]?PH[w.phase].color:"var(--phase)";
     h+=`<div class="card" style="border-left:4px solid ${col}"><button class="hrow" data-a="hist" data-v="${esc(w.id)}" style="width:100%;text-align:left">
       <div><div class="small muted">${fmtDate(w.date)} &middot; Week ${w.week}</div><div class="htitle">${esc(w.title)}</div>
-      <div class="small muted">${w.min} min &middot; ${w.sets} sets &middot; ${(w.vol||0).toLocaleString()} ${esc(w.unit||"")}${(w.prs||[]).length?' &middot; <span class="pr">'+w.prs.length+' PR</span>':""}</div></div><span class="muted">${open?"&#8963;":"&#8964;"}</span></button>`;
+      <div class="small muted">${w.min} min &middot; ${w.sets} sets &middot; ${(w.vol||0).toLocaleString()} ${esc(w.unit||"")}${(w.prs||[]).length?' &middot; <span class="pr">'+w.prs.length+' PR</span>':""}${w.note||(w.ex||[]).some(e=>e.note)?' &middot; notes':""}</div></div><span class="muted">${open?"&#8963;":"&#8964;"}</span></button>`;
     if(open){
-      h+=`<div style="margin-top:10px">${(w.ex||[]).map(e=>`<div style="padding:6px 0;border-top:1px solid var(--line)"><div style="font-weight:700">${esc(e.n)}${(w.prs||[]).includes(e.n)?' <span class="pr">PR</span>':""}</div><div class="small muted num" style="font-size:15px">${e.sets.map(s=>(s.w?s.w+" x ":"")+s.r+(s.rpe?" @"+esc(s.rpe):"")).join(" &nbsp;&middot;&nbsp; ")}</div></div>`).join("")}
+      h+=`<div style="margin-top:10px">${w.note?`<div class="lastnote" style="margin-bottom:8px"><b>Workout note:</b> ${esc(w.note)}</div>`:""}${(w.ex||[]).map(e=>`<div style="padding:6px 0;border-top:1px solid var(--line)"><div style="font-weight:700">${esc(e.n)}${(w.prs||[]).includes(e.n)?' <span class="pr">PR</span>':""}</div><div class="small muted num" style="font-size:15px">${e.sets.map(s=>(s.w?s.w+" x ":"")+s.r+(s.rpe?" @"+esc(s.rpe):"")).join(" &nbsp;&middot;&nbsp; ")}</div>${e.note?`<div class="small" style="color:var(--warn);margin-top:2px">Note: ${esc(e.note)}</div>`:""}</div>`).join("")}
       <button class="btn sm danger" data-a="delWorkout" data-v="${esc(w.id)}" style="margin-top:10px">Delete workout</button></div>`;
     }
     h+="</div>";
@@ -1313,6 +1350,11 @@ function sheetSettings(){
   const s=S.settings, age=backupAge();
   openSheet(`<h2>Settings</h2><div class="stack" style="margin-top:12px">
     <div class="field"><label class="label" for="set-start">Program start (a Monday)</label><input type="date" id="set-start" value="${esc(s.start)}"></div>
+    <div class="field"><span class="label">Rest timer sound</span><div class="seg"><button class="${s.sound!=="loud"?"on":""}" data-a="sound" data-v="mix">Over my music</button><button class="${s.sound==="loud"?"on":""}" data-a="sound" data-v="loud">Loud</button></div>
+      <p class="small muted" style="margin:2px 0 0">${s.sound==="loud"?"Plays even in silent mode, but iPhone may pause your music when it dings.":"Plays on top of your music. Your iPhone must not be in silent mode, or the ding is muted."}</p></div>
+    <label class="row small" style="gap:10px;cursor:pointer"><input type="checkbox" id="set-countdown" ${s.countdown?"checked":""} style="width:22px;height:22px"> 3-2-1 beeps before the ding</label>
+    <label class="row small" style="gap:10px;cursor:pointer"><input type="checkbox" id="set-awake" ${s.awake?"checked":""} style="width:22px;height:22px"> Keep screen on during workouts</label>
+    <button class="btn ghost block" data-a="testSound">Test sound (put headphones in)</button>
     <div class="field"><span class="label">Lifting units</span><div class="seg"><button class="${s.unit==="lb"?"on":""}" data-a="unit" data-v="lb">lb</button><button class="${s.unit==="kg"?"on":""}" data-a="unit" data-v="kg">kg</button></div></div>
     <div class="field"><label class="label" for="set-week">Week</label><select id="set-week"><option value="0">Automatic from start date (week ${weekNum()||1})</option>${Array.from({length:16},(_,i)=>`<option value="${i+1}" ${s.weekOverride===i+1?"selected":""}>${i+1===16?"March (maintain)":"Week "+(i+1)}</option>`).join("")}</select></div>
     <button class="btn primary block" data-a="saveSettings">Save settings</button>
@@ -1403,10 +1445,11 @@ document.addEventListener("click",ev=>{
       if(S.active&&!t.dataset.ok){confirmCb=()=>{startWorkout(v);};sheetConfirm("Replace current workout?","The workout in progress will be discarded.","Discard and start",()=>startWorkout(v),true);}
       else startWorkout(v);
       break;
-    case "resume": renderWorkout(); break;
+    case "noteToggle": {const e=S.active.ex[+t.dataset.e]; e.showNote=true; renderWorkoutKeepScroll(); const n=$("#n-"+t.dataset.e); if(n) n.focus(); break;}
+    case "resume": renderWorkout(); ensureAudio(); keepAwake(true); break;
     case "minimize": $("#wk").innerHTML=""; document.body.style.overflow=""; render(); break;
     case "finish": finishWorkout(); break;
-    case "discard": sheetConfirm("Discard workout?","Nothing from this session will be saved.","Discard",()=>{S.active=null;Store.saveActive();stopRest();renderWorkout();render();},true); break;
+    case "discard": sheetConfirm("Discard workout?","Nothing from this session will be saved.","Discard",()=>{S.active=null;Store.saveActive();stopRest();keepAwake(false);renderWorkout();render();},true); break;
     case "confirmOk": {const cb=confirmCb;confirmCb=null;closeSheet();cb&&cb();break;}
     case "closeSheet": closeSheet(); break;
     case "check": {
@@ -1434,8 +1477,8 @@ document.addEventListener("click",ev=>{
     case "resetCustom": sheetConfirm("Reset to the plan?","All swaps, removed exercises and added exercises go back to the original program. Your logged history stays.","Reset",()=>{S.settings.swaps={};S.settings.extras={};Store.saveSettings();render();toast("Back to the original plan");},true); break;
     case "addSet": {const e=S.active.ex[+t.dataset.e];const l=e.sets[e.sets.length-1];e.sets.push({k:"",tr:l.tr,rpe:l.rpe,pw:l.pw,pr:l.pr,w:"",r:"",ar:"",done:false});Store.saveActive();renderWorkoutKeepScroll();break;}
     case "rmSet": {const e=S.active.ex[+t.dataset.e];if(e.sets.length>1){e.sets.pop();Store.saveActive();renderWorkoutKeepScroll();}break;}
-    case "rest-15": if(S.rest){S.rest.end-=15000;tickRest();} break;
-    case "rest+15": if(S.rest){S.rest.end+=15000;S.rest.beeped=false;tickRest();} break;
+    case "rest-15": if(S.rest){S.rest.end-=15000;scheduleRestSound();tickRest();} break;
+    case "rest+15": if(S.rest){S.rest.end+=15000;S.rest.beeped=false;scheduleRestSound();tickRest();} break;
     case "restSkip": stopRest(); break;
     case "hist": S.openHist=S.openHist===v?null:v; renderMainOnly(); break;
     case "delWorkout": sheetConfirm("Delete this workout?","It will be removed from your history and charts.","Delete",()=>{Store.del("workouts",v);render();},true); break;
@@ -1461,9 +1504,12 @@ document.addEventListener("click",ev=>{
     case "restorePaste": openSheet(`<h2>Paste backup</h2><textarea id="rs-txt" style="width:100%;height:200px;border-radius:12px;background:var(--bg);color:var(--text);border:1px solid var(--line);padding:10px;font-size:14px" placeholder="Paste the backup text here"></textarea><div class="stack" style="margin-top:10px"><button class="btn primary block" data-a="restoreGo">Restore</button><button class="btn ghost block" data-a="closeSheet">Cancel</button></div>`); break;
     case "restoreGo": restoreFrom(($("#rs-txt")||{}).value||""); break;
     case "dismissInstall": S.settings.hideInstall=true; Store.saveSettings(); render(); break;
+    case "sound": S.settings.sound=v; Store.saveSettings(); setSessionType(); sheetSettings(); break;
+    case "testSound": S.settings.countdown=$("#set-countdown").checked; testSound(); break;
     case "saveSettings": {
       const st=$("#set-start").value; if(st) S.settings.start=st;
       S.settings.weekOverride=parseInt($("#set-week").value,10)||0;
+      S.settings.countdown=$("#set-countdown").checked; S.settings.awake=$("#set-awake").checked; if(!S.settings.awake) keepAwake(false); else if(S.active) keepAwake(true);
       Store.saveSettings(); closeSheet(); render(); toast("Settings saved"); break;
     }
   }
@@ -1471,6 +1517,8 @@ document.addEventListener("click",ev=>{
 document.addEventListener("input",ev=>{
   const t=ev.target;
   if(t.id==="ex-search"){$("#ex-results").innerHTML=searchResults(t.value,t.dataset.mode,t.dataset.e);return;}
+  if(t.dataset&&t.dataset.note!=null&&S.active){const e=S.active.ex[+t.dataset.note];e.mynote=t.value;Store.saveActive();const b=t.parentElement.querySelector('[data-a="noteToggle"]');if(b)b.textContent=t.value.trim()?"Note \u2713":"+ Note";return;}
+  if(t.dataset&&t.dataset.wnote&&S.active){S.active.note=t.value;Store.saveActive();return;}
   if(t.dataset&&t.dataset.f&&S.active){
     const s=S.active.ex[+t.dataset.e].sets[+t.dataset.s];
     s[t.dataset.f]=t.value.replace(",","."); Store.saveActive();
@@ -1492,7 +1540,8 @@ try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(
 if("serviceWorker" in navigator && location.protocol==="https:"){
   window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").catch(()=>{});});
 }
-document.addEventListener("visibilitychange",()=>{if(!document.hidden){render();if(S.rest)tickRest();}});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){render();if(S.active)keepAwake(true);if(S.rest){ensureAudio();if(!S.rest.beeped&&S.rest.end>Date.now())scheduleRestSound();tickRest();}}});
+document.addEventListener("touchend",()=>{if(S.active){ensureAudio();if(!wakeLock)keepAwake(true);}},{passive:true});
 })();
 </script>
 </body>
