@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -120,7 +120,8 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .tag.TOP{color:var(--bad)}
 .hint{margin-top:8px;font-size:13px;padding:7px 10px;border-radius:9px;background:rgba(255,255,255,.04)}
 .hint b{color:var(--phase)}
-.sets{margin-top:10px;display:grid;grid-template-columns:34px 1fr 74px 60px 50px 44px;gap:6px;align-items:center}
+.sets{margin-top:10px;display:grid;grid-template-columns:30px minmax(0,1fr) minmax(58px,70px) minmax(48px,58px) minmax(42px,50px) 42px;gap:5px;align-items:center}
+.prev{min-width:0}
 .sets .h{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.06em;text-transform:uppercase;text-align:center}
 .sn{font-family:var(--display);font-weight:700;font-size:16px;text-align:center;border-radius:8px;padding:6px 0;background:var(--surface-2)}
 .sn.Top{background:rgba(229,104,78,.2);color:var(--bad);font-size:12px}
@@ -199,6 +200,12 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .exfoot .btn{flex:none;white-space:nowrap;padding:0 11px}
 .ibtn.hb{font-family:inherit}
 .stat b small{font-weight:600}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html,body{max-width:100%;overflow-x:hidden}
+input,select,textarea{font-size:16px}
+.note{font-size:16px}
+.field{min-width:0}
+.field input,.field select,.field textarea{width:100%;min-width:0;box-sizing:border-box}
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 12px);transform:translateX(-50%);z-index:90;background:var(--surface-2);border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -1232,7 +1239,7 @@ function renderWorkout(){
       const lab=s.k==="W"?"W":s.k==="Top"?"TOP":s.k==="Back"?"B"+wi:s.k==="Drop"?"DROP":String(wi+1);
       h+=`<div class="setrow${s.done?" done":""}">
         <div class="sn ${s.k}">${lab}</div>
-        <div class="prev">${s.k==="W"?"warm-up":s.pw!==""||s.pr!==""?(s.pw?esc(s.pw)+"\u00d7":"")+esc(s.pr):"&ndash;"}</div>
+        <div class="prev">${s.k==="W"?"&ndash;":s.pw!==""||s.pr!==""?(s.pw?esc(s.pw)+"\u00d7":"")+esc(s.pr):"&ndash;"}</div>
         <input class="in${s.sw&&s.sw!==String(s.pw)&&s.k!=="W"?" rec":""}" id="w-${ei}-${si}" inputmode="decimal" placeholder="${esc(s.sw||s.pw||"")}" value="${esc(s.w)}" data-f="w" data-e="${ei}" data-s="${si}" aria-label="Weight set ${si+1}">
         <input class="in" id="r-${ei}-${si}" inputmode="numeric" placeholder="${esc(s.k==="W"?s.tr:(s.sr||s.pr||lowRep(s.tr)))}" value="${esc(s.r)}" data-f="r" data-e="${ei}" data-s="${si}" aria-label="Reps set ${si+1}">
         <input class="in rpe" id="p-${ei}-${si}" inputmode="decimal" placeholder="${esc(s.rpe)}" value="${esc(s.ar)}" data-f="ar" data-e="${ei}" data-s="${si}" aria-label="RPE set ${si+1}">
