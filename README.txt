@@ -1,4 +1,4 @@
-MEXICO READY LIFTS - update (rest timer sound, keep screen on, notes)
+MEXICO READY LIFTS - update (weekly progress charts, exercise history in workouts, redrawn diagrams)
 
 TO UPDATE YOUR APP ON GITHUB
 1. Open github.com/kihwankimm-spec/Fitness
